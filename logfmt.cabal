@@ -25,6 +25,7 @@ source-repository head
 library
   exposed-modules:
       Data.Fmt
+      Data.Fmt.Time
       Data.Fmt.ByteString
       Data.Fmt.Text
 
