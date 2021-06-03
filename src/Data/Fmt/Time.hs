@@ -269,24 +269,24 @@ diff fix =
             suffix = fmt (if fix && ts < 0 then " ago" else "")
     toInt ts base = abs (round (ts / base)) :: Int
     ranges =
-      [(0,Fmt.v % " milliseconds",0.001)
-      ,(1,Fmt.v % " seconds",1)
+      [(0,Fmt.sh % " milliseconds",0.001)
+      ,(1,Fmt.sh % " seconds",1)
       ,(minute',const1 "a minute",0)
-      ,(minute'*2,Fmt.v % " minutes",minute')
+      ,(minute'*2,Fmt.sh % " minutes",minute')
       ,(minute'*30,const1 "half an hour",0)
-      ,(minute'*31,Fmt.v % " minutes",minute')
+      ,(minute'*31,Fmt.sh % " minutes",minute')
       ,(hour',const1 "an hour",0)
-      ,(hour'*2,Fmt.v % " hours",hour')
+      ,(hour'*2,Fmt.sh % " hours",hour')
       ,(hour'*3,const1 "a few hours",0)
-      ,(hour'*4,Fmt.v % " hours",hour')
+      ,(hour'*4,Fmt.sh % " hours",hour')
       ,(day',const1 "a day",0)
-      ,(day'*2,Fmt.v % " days",day')
+      ,(day'*2,Fmt.sh % " days",day')
       ,(week',const1 "a week",0)
-      ,(week'*2,Fmt.v % " weeks",week')
+      ,(week'*2,Fmt.sh % " weeks",week')
       ,(month',const1 "a month",0)
-      ,(month'*2,Fmt.v % " months",month')
+      ,(month'*2,Fmt.sh % " months",month')
       ,(year',const1 "a year",0)
-      ,(year'*2,Fmt.v % " years",year')]
+      ,(year'*2,Fmt.sh % " years",year')]
       where year' = month' * 12
             month' = day' * 30
             week' = day' * 7

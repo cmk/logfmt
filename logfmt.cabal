@@ -26,8 +26,8 @@ library
   exposed-modules:
       Data.Fmt
       Data.Fmt.Time
-      Data.Fmt.ByteString
-      Data.Fmt.Text
+      --Data.Fmt.ByteString
+      --Data.Fmt.Text
 
   other-modules:
       Paths_logfmt
