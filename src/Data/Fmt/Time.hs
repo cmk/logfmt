@@ -53,12 +53,11 @@ module Data.Fmt.Time
   , customTimeFmt
   ) where
 
-import Data.Fmt as Fmt
+import Data.Fmt.Type as Fmt
 
 import Data.List (find)
 import Data.Tuple
 import Data.Time (FormatTime, formatTime, defaultTimeLocale)
-import Data.String
 --import System.Locale ()
 --import Control.Monad.Trans.State.Strict
 
