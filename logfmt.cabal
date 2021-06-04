@@ -25,9 +25,13 @@ source-repository head
 library
   exposed-modules:
       Data.Fmt
+      Data.Fmt.Ansi
+      --Data.Fmt.Html
       Data.Fmt.Time
-      --Data.Fmt.ByteString
-      --Data.Fmt.Text
+      Data.Fmt.Type
+      --System.Log.Format
+      --System.Log.Logger
+      --System.Log.Parser
 
   other-modules:
       Paths_logfmt
