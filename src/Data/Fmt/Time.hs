@@ -1,4 +1,3 @@
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Data.Fmt.Time (
     fmtTime,
@@ -17,7 +16,7 @@ module Data.Fmt.Time (
     w,
     d,
     b,
-    y
+    y,
     -- Duration
     ss,
     mm,
@@ -28,8 +27,6 @@ module Data.Fmt.Time (
 
 import Data.Fmt.Type as Fmt ((%), fmt, fmt1, Fmt1, runFmt, IsString(..))
 import qualified Data.Fmt.Type as Fmt
-import Data.List (find)
-import Data.Tuple
 import Data.Time (FormatTime, formatTime, defaultTimeLocale)
 
 

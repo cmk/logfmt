@@ -53,7 +53,6 @@ module Data.Fmt (
     quotes,
     quotes',
     parens,
-    angles,
     braces,
     brackets,
     backticks,
@@ -579,7 +578,7 @@ list = catWith (B.intercalate ", ") . brackets
 
 -- | A JSON-style formatter for lists.
 --
--- >>> fmt $ jsonListF [1,2,3]
+-- >>> printf jsonList [1,2,3]
 -- [
 --   1
 -- , 2
