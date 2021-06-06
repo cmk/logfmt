@@ -184,8 +184,9 @@ import Text.Show
 
 type LogFmt = Fmt LogStr
 
-logFmt :: ToLogStr m => Fmt m s a -> Fmt LogStr s a
-logFmt = refmt toLogStr
+logFmt :: (m -> LogStr) -> Fmt m s a -> Fmt LogStr s a
+logFmt = refmt
+
 --logFmt :: ToLogStr m => m -> Fmt LogStr a a
 --logFmt = fmt . toLogStr
 
@@ -204,8 +205,11 @@ format = flip unFmt (fromString . B.unpack . fromLogStr)
 {-# Specialize format :: Fmt LogStr Builder a -> a #-}
 
 -- | Run the formatter and print out the text to stdout.
+--printf :: Fmt LogStr Term a -> a
+--printf = flip unFmt (B.putStr . fromLogStr)
+
 printf :: Fmt LogStr Term a -> a
-printf = flip unFmt (B.putStr . fromLogStr)
+printf = flip unFmt (B.putStrLn . fromLogStr)
 
 type Term = IO ()
 
