@@ -15,35 +15,39 @@
 
 -- | Internal format starters.
 module Data.Fmt (
-
-    -- * Types
-    LogFmt,
-    Fmt1,
-    Fmt (..),
+    
+    Term,
 
     -- * Fmt
+    LogFmt,
+    Fmt (..),
     fmt,
-    fmt1,
     logFmt,
     runFmt,
     format,
     printf,
-    Term,
-    
-    -- * Transforms
-    (%),
+    refmt,
     apply,
     bind,
-    const1,
-    const2,
+    cat,
+    (%),
     remove,
     replace,
     reformat,
+
+    -- * Fmt1
+    Fmt1,
+    Fmt2,
+    fmt1,
+    fmt2,
+    const1,
+    const2,
+    (.%),
     catWith,
     --splitWith,
+
     
     -- * Formatting
-    cat,
     spaces,
     indent,
     prefix,
@@ -181,10 +185,8 @@ import Text.Show
 
 
 
-type LogFmt = Fmt LogStr
-
-logFmt :: (m -> LogStr) -> Fmt m s a -> Fmt LogStr s a
-logFmt = refmt
+--logFmt :: (m -> LogStr) -> Fmt m s a -> Fmt LogStr s a
+--logFmt = refmt
 
 --logFmt :: ToLogStr m => m -> Fmt LogStr a a
 --logFmt = fmt . toLogStr
@@ -195,22 +197,7 @@ logFmt = refmt
 --format :: Fmt LogStr B.ByteString a -> a
 --format = flip unFmt fromLogStr
 
-format :: IsString s => Fmt LogStr s a -> a
-format = flip unFmt (fromString . B.unpack . fromLogStr)
-{-# Specialize format :: Fmt LogStr BL.ByteString a -> a #-}
-{-# Specialize format :: Fmt LogStr ByteString a -> a #-}
-{-# Specialize format :: Fmt LogStr String a -> a #-}
-{-# Specialize format :: Fmt LogStr LogStr a -> a #-}
-{-# Specialize format :: Fmt LogStr Builder a -> a #-}
 
--- | Run the formatter and print out the text to stdout.
---printf :: Fmt LogStr Term a -> a
---printf = flip unFmt (B.putStr . fromLogStr)
-
-printf :: Fmt LogStr Term a -> a
-printf = flip unFmt (B.putStrLn . fromLogStr)
-
-type Term = IO ()
 
 -- Transformation
 
