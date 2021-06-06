@@ -25,17 +25,17 @@ module Data.Fmt.Type (
     
     -- ** Introduction
     fmt,
-    fmts,
     fmt1,
     fmt2,
     
     -- ** Transformation
+    apply,
+    bind,
+    cat,
+    (%),
     const1,
     const2,
     refmt,
-    apply,
-    bind,
-    (%),
 
     -- * Formatters
     c,
@@ -46,7 +46,7 @@ module Data.Fmt.Type (
     g,
 
     -- ** Collections
-    cat,
+    cat1,
     left1,
     right1,
     either1,
@@ -62,7 +62,6 @@ module Data.Fmt.Type (
     quotes,
     quotes',
     parens,
-    angles,
     braces,
     brackets,
     backticks,
@@ -74,8 +73,9 @@ module Data.Fmt.Type (
 --import Data.Printf
 --import qualified Data.List as L
 import Control.Applicative (Const (..), getConst)
-import Control.Arrow ((&&&))
+import Control.Arrow
 import Control.Category (Category (), (<<<), (>>>))
+import Data.Bifunctor (bimap)
 import Data.Function ((&))
 import Data.Profunctor
 import Data.Profunctor.Rep
@@ -87,17 +87,17 @@ import qualified Numeric as N -- (showEFloat,showFFloat,showIntAtBase)
 -- $setup
 -- >>> import Test.Contra.Fmt
 
--- | Format a value of type @a@.
+-- | A unary higher-order formatter.
 --
 -- @ 'Fmt1' m s a ~ (m -> s) -> a -> s @
 type Fmt1 m s a = Fmt m s (a -> s)
 
--- | Format two values of type @a@ and @b@.
+-- | A binary higher-order formatter.
 --
 -- @ 'Fmt2' m s a b ~ (m -> s) -> a -> b -> s @
 type Fmt2 m s a b = Fmt m s (a -> b -> s)
 
--- | Format three values of type @a@, @b@ and @c@.
+-- | A ternary higher-order formatter.
 --
 -- @ 'Fmt3' m s a b c ~ (m -> s) -> a -> b -> c -> s @
 type Fmt3 m s a b c = Fmt m s (a -> b -> c -> s)
@@ -124,12 +124,12 @@ type Fmt3 m s a b c = Fmt m s (a -> b -> c -> s)
 --
 -- >>> format ("This person's name is " % s % ", their age is " % d) "Anne" 22
 -- "This person's name is Anne, their age is 22"
-newtype Fmt m s a = Fmt {unFmt :: (m -> s) -> a}
+newtype Fmt m a b = Fmt {unFmt :: (m -> a) -> b}
 
 
 -- | Apply two formatters to the same input argument.
 --
-instance Semigroup m => Semigroup (Fmt1 m a b) where
+instance Semigroup m => Semigroup (Fmt1 m s a) where
     m <> n =
         Fmt
             ( \k a ->
@@ -145,6 +145,18 @@ instance (IsString m, a ~ b) => IsString (Fmt m a b) where
 instance Monoid m => Category (Fmt m) where
     id = fmt mempty
     (.) = (%)
+
+instance Monoid m => Arrow (Fmt m) where
+    arr f = Fmt $ \k -> f (k mempty)
+    x *** y = dimap fst (,) x <*> lmap snd y
+
+{- TODO: check whether this is lawful
+instance Monoid m => ArrowChoice (Fmt m) where
+    x +++ y = Fmt $ bimap (unFmt x) (unFmt y) . coapply
+
+coapply :: Monoid m => (m -> Either a b) -> Either (m -> a) (m -> b)
+coapply f = either (Left . const) (Right . const) (f mempty)
+-}
 
 deriving via (Costar ((->) m) a) instance Functor (Fmt m a)
 deriving via (Costar ((->) m) a) instance Applicative (Fmt m a)
@@ -164,6 +176,9 @@ instance Corepresentable (Fmt m) where
 runFmt :: Fmt m m a -> a
 runFmt = flip unFmt id
 
+
+
+
 -- Introduction
 
 -------------------------
@@ -172,9 +187,6 @@ runFmt = flip unFmt id
 --
 fmt :: m -> Fmt m a a
 fmt b = Fmt ($ b)
-
-fmts :: Monoid m => (s -> a) -> Fmt m s a
-fmts f = Fmt $ \k -> f (k mempty)
 
 -- | Format a value of type @a@ using a function of type @a -> m@.
 --
@@ -190,24 +202,17 @@ fmt2 f = Fmt $ \k -> fmap k . f
 
 -------------------------
 
-const1 :: Fmt m s s -> Fmt1 m s a
-const1 = lmap const . closed
-
-const2 :: Fmt m s s -> Fmt2 m s a b
-const2 = lmap (const.const) . (closed.closed)
-
--- | Map over the the formatting @Monoid@.
---
-refmt :: (m1 -> m2) -> Fmt m1 s a -> Fmt m2 s a
-refmt m12 (Fmt f) = Fmt $ \a -> f (a . m12)
-
 apply :: Fmt1 m s m -> Fmt m s a -> Fmt m s a
 apply (Fmt f) (Fmt a) = Fmt (a . f)
 
 -- | Indexed bind.
 --
-bind :: Fmt m s1 a -> (m -> Fmt m s2 s1) -> Fmt m s2 a
+bind :: Fmt m a1 b -> (m -> Fmt m a2 a1) -> Fmt m a2 b
 bind m f = Fmt $ \k -> unFmt m (\a -> unFmt (f a) k)
+
+cat :: (Monoid m, Foldable f) => f (Fmt m a a) -> Fmt m a a
+cat = foldr (%) C.id
+{-# INLINE cat #-}
 
 -- | Concatenate two formatters.
 --
@@ -219,6 +224,16 @@ f % g =
               g
                   `bind` \b -> fmt (a <> b)
 
+const1 :: Fmt m a a -> Fmt1 m a b
+const1 = lmap const . closed
+
+const2 :: Fmt m a a -> Fmt2 m a b c
+const2 = lmap (const.const) . (closed.closed)
+
+-- | Map over the the formatting @Monoid@.
+--
+refmt :: (m1 -> m2) -> Fmt m1 a b -> Fmt m2 a b
+refmt m12 (Fmt f) = Fmt $ \a -> f (a . m12)
 
 -- Formatters
 
@@ -278,12 +293,12 @@ g prec = fmt1 $ fromString . flip (N.showGFloat $ Just prec) []
 
 -- | Format each value in a list and concatenate them all:
 --
--- >>> runFmt (cat (s % " ")) ["one", "two", "three"]
+-- >>> runFmt (cat1 (s % " ")) ["one", "two", "three"]
 -- "one two three "
 --
-cat :: (Monoid m, Foldable f) => Fmt1 m m a -> Fmt1 m s (f a)
-cat f = fmt1 $ foldMap (runFmt f)
-{-# INLINE cat #-}
+cat1 :: (Monoid m, Foldable f) => Fmt1 m m a -> Fmt1 m s (f a)
+cat1 f = fmt1 $ foldMap (runFmt f)
+{-# INLINE cat1 #-}
 
 -- | Render the value in a Left with the given formatter, rendering a Right as an empty string:
 --
@@ -292,7 +307,7 @@ cat f = fmt1 $ foldMap (runFmt f)
 --
 -- >>> format (left1 text) (Right 16)
 -- ""
-left1 :: IsString m => Fmt1 m m a -> Fmt1 m s (Either a x)
+left1 :: IsString m => Fmt1 m m a -> Fmt1 m s (Either a b)
 left1 f = either1 f (fmt1 $ const "")
 {-# INLINE left1 #-}
 
@@ -303,7 +318,7 @@ left1 f = either1 f (fmt1 $ const "")
 --
 -- >>> format (right1 text) (Right "bingo")
 -- "bingo"
-right1 :: IsString m => Fmt1 m m a -> Fmt1 m s (Either x a)
+right1 :: IsString m => Fmt1 m m b -> Fmt1 m s (Either a b)
 right1 = either1 (fmt1 $ const "")
 {-# INLINE right1 #-}
 
@@ -345,7 +360,7 @@ spaces n = fromString $ replicate n ' '
 --
 -- Note that this only indents the first line of a multi-line string.
 -- To indent all lines see 'reindent'.
-indent :: (IsString m, Semigroup m) => Int -> Fmt m s a -> Fmt m s a
+indent :: (IsString m, Semigroup m) => Int -> Fmt m a b -> Fmt m a b
 indent = prefix . spaces
 {-# INLINABLE indent #-}
 
@@ -358,12 +373,12 @@ indent = prefix . spaces
 --     - 1
 --     - 2
 --     - 3
-prefix :: Semigroup m => m -> Fmt m s a -> Fmt m s a
+prefix :: Semigroup m => m -> Fmt m a b -> Fmt m a b
 prefix s f = fmt s % f
 {-# INLINE prefix #-}
 
 -- | Add the given suffix to the formatted item.
-suffix :: Semigroup m => m -> Fmt m s a -> Fmt m s a
+suffix :: Semigroup m => m -> Fmt m a b -> Fmt m a b
 suffix s f = f % fmt s
 {-# INLINE suffix #-}
 
@@ -373,7 +388,7 @@ suffix s f = f % fmt s
 -- "(1, two)"
 -- >>> runFmt (enclose (fmt "<!--") (fmt "-->") s) "an html comment"
 -- "<!--an html comment-->"
-enclose :: Semigroup m => Fmt m s2 c -> Fmt m a s1 -> Fmt m s1 s2 -> Fmt m a c
+enclose :: Semigroup m => Fmt m b2 c -> Fmt m a b1 -> Fmt m b1 b2 -> Fmt m a c
 enclose pre suf f = pre % f % suf
 {-# INLINE enclose #-}
 
@@ -381,7 +396,7 @@ enclose pre suf f = pre % f % suf
 --
 -- >>> runFmt (tuple d t) 1 "two"
 -- "(1, two)"
-tuple :: (Semigroup m, IsString m) => Fmt m s c -> Fmt m a s -> Fmt m a c
+tuple :: (Semigroup m, IsString m) => Fmt m b c -> Fmt m a b -> Fmt m a c
 tuple f1 f2 = parens $ enclose f1 f2 ", "
 
 -- | Add double quotes around the formatted item:
@@ -390,7 +405,7 @@ tuple f1 f2 = parens $ enclose f1 f2 ", "
 --
 -- >>> runFmt ("He said it was based on " % quotes t' % ".") "science"
 -- He said it was based on "science".
-quotes :: (Semigroup m, IsString m) => Fmt m s a -> Fmt m s a
+quotes :: (Semigroup m, IsString m) => Fmt m a b -> Fmt m a b
 quotes = enclose (fmt "\"") (fmt "\"")
 {-# INLINE quotes #-}
 
@@ -398,7 +413,7 @@ quotes = enclose (fmt "\"") (fmt "\"")
 --
 -- >>> let obj = Just Nothing in format ("The object is: " % quotes' shown % ".") obj
 -- "The object is: 'Just Nothing'."
-quotes' :: (Semigroup m, IsString m) => Fmt m s a -> Fmt m s a
+quotes' :: (Semigroup m, IsString m) => Fmt m a b -> Fmt m a b
 quotes' = enclose (fmt "'") (fmt "'")
 {-# INLINE quotes' #-}
 
@@ -409,26 +424,15 @@ quotes' = enclose (fmt "'") (fmt "'")
 --
 -- >>> printf (get 5 (list (parens d))) [1..]
 -- [(1), (2), (3), (4), (5)]
-parens :: (Semigroup m, IsString m) => Fmt m s a -> Fmt m s a
+parens :: (Semigroup m, IsString m) => Fmt m a b -> Fmt m a b
 parens = enclose (fmt "(") (fmt ")")
 {-# INLINE parens #-}
 
--- | Add angle brackets around the formatted item:
---
--- >>> runFmt (angles c) '/'
--- "</>"
---
--- >>> format (list (angles t)) ["html", "head", "title", "body", "div", "span"]
--- "[<html>, <head>, <title>, <body>, <div>, <span>]"
-angles :: (Semigroup m, IsString m) => Fmt m s a -> Fmt m s a
-angles = enclose (fmt "<") (fmt ">")
-{-# INLINE angles #-}
-
--- | Add curly brackets around the formatted item:
+-- | Add braces around the formatted item:
 --
 -- >>> runFmt ("\\begin" % braces t) "section"
 -- "\\begin{section}"
-braces :: (Semigroup m, IsString m) => Fmt m s a -> Fmt m s a
+braces :: (Semigroup m, IsString m) => Fmt m a b -> Fmt m a b
 braces = enclose (fmt "{") (fmt "}")
 {-# INLINE braces #-}
 
@@ -436,7 +440,7 @@ braces = enclose (fmt "{") (fmt "}")
 --
 -- >>> runFmt (brackets d) 7
 -- "[7]"
-brackets :: (Semigroup m, IsString m) => Fmt m s a -> Fmt m s a
+brackets :: (Semigroup m, IsString m) => Fmt m a b -> Fmt m a b
 brackets = enclose (fmt "[") (fmt "]")
 {-# INLINE brackets #-}
 
@@ -444,6 +448,6 @@ brackets = enclose (fmt "[") (fmt "]")
 --
 -- >>> format ("Be sure to run " % backticks builder % " as root.") ":(){:|:&};:"
 -- "Be sure to run `:(){:|:&};:` as root."
-backticks :: (Semigroup m, IsString m) => Fmt m s a -> Fmt m s a
+backticks :: (Semigroup m, IsString m) => Fmt m a b -> Fmt m a b
 backticks = enclose (fmt "`") (fmt "`")
 {-# INLINE backticks #-}
