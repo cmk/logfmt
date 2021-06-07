@@ -26,7 +26,7 @@ library
   exposed-modules:
       Data.Fmt
       Data.Fmt.Ansi
-      --Data.Fmt.Attr
+      Data.Fmt.Attr
       Data.Fmt.Html
       Data.Fmt.Time
       --System.Log.Format
