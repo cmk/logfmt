@@ -6,7 +6,7 @@ module Data.Fmt.Ansi (
     reset,
     shift,
     scroll,
-    
+
     -- ** Emphasis
     blink,
     bold,
@@ -100,4 +100,3 @@ layer pal lay = code $ SetPaletteColor lay pal
 
 palette :: (Semigroup m, IsString m) => Palette -> Fmt m s a -> Fmt m s a
 palette (fg, bg) = codes [SetPaletteColor Foreground fg, SetPaletteColor Background bg]
-

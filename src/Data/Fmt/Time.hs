@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Data.Fmt.Time (
     time,
-    
+
     -- * Time
     t,
     hm,
@@ -13,7 +14,7 @@ module Data.Fmt.Time (
     year,
     unix,
     zone,
-    
+
     -- * Duration
     secs,
     mins,
@@ -25,13 +26,14 @@ module Data.Fmt.Time (
 import Data.Fmt
 import qualified Data.Fmt.Code as Fmt
 import Data.String
-import Data.Time (FormatTime, formatTime, defaultTimeLocale)
+import Data.Time (FormatTime, defaultTimeLocale, formatTime)
 import Data.Time.Format.ISO8601 (ISO8601, iso8601Show)
 import Prelude hiding (min)
 
--- | A custom time formatter.
--- 
--- For example, the E.U. formatting convention is  /time "%Y-%m-%d %T %z"/
+{- | A custom time formatter.
+
+ For example, the E.U. formatting convention is  /time "%Y-%m-%d %T %z"/
+-}
 time :: (IsString m, FormatTime a) => String -> Fmt1 m s a
 time s = fmt1 $ fromString . formatTime defaultTimeLocale s
 
@@ -102,4 +104,3 @@ days n = fmt1 (runFmt (Fmt.f n) . abs . count) where count n' = n' / 24 / 60 / 6
 -- | Display to a given precision the absolute value time span in years.
 years :: IsString m => Int -> Fmt1 m s Double
 years n = fmt1 (runFmt (Fmt.f n) . abs . count) where count n' = n' / 365 / 24 / 60 / 60
-
