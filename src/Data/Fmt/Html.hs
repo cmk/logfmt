@@ -1,8 +1,4 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ViewPatterns #-}
 
 {- | Html5 formatting.
 
@@ -11,12 +7,9 @@
 module Data.Fmt.Html (
     -- * Html
     Html,
-    Attr (..),
-    attr,
+    Attr,
     toHtml,
     comment,
-    element,
-    element_,
     Element (..),
     (!?),
 
@@ -131,54 +124,10 @@ module Data.Fmt.Html (
     var,
     video,
     wbr,
-
-    -- * Attributes
 ) where
 
-import Control.Monad
-import qualified Data.ByteString.Char8 as B
 import Data.Fmt as Fmt hiding (b, u)
-
 import Prelude hiding (div, head, map, span)
-
--- > runLogFmt $ numbers 2
--- "<html><p>A list of numbers:</p><html><ul><li>1</li><li>2</li></ul></html><p>The end.</p></html>"
-numbers :: Int -> Html LogStr
-numbers n = html $ do
-    l <- ul . cat $ li . toHtml <$> [1 .. n]
-    cat
-        [ p "A list of numbers:"
-        , fmt l
-        , p "The end."
-        ]
-
---type Attr = forall a. Endo (Html a)
-
-type Html a = Fmt LogStr a a
-
--- | Type for an attribute.
-newtype Attr = Attr (forall a. Html a -> Html a)
-
-instance Semigroup Attr where
-    Attr f <> Attr g = Attr (g . f)
-
-instance Monoid Attr where
-    mempty = Attr id
-
-attr :: ToLogStr s => LogStr -> s -> Attr
-attr k v = Attr $ splitWith f g
-  where
-    f = B.break $ \c -> c == '/' || c == '>'
-    g l r0 = case B.uncons r0 of
-        Just ('/', r) -> toHtml l % fmt k % "=" % quotes (toHtml v) % fmt " /" % toHtml r
-        Just ('>', r) -> toHtml l % " " % fmt k % "=" % quotes (toHtml v) % fmt ">" % toHtml r
-        _ -> fmt mempty
-
-toHtml :: ToLogStr s => s -> Html a
-toHtml = logFmt
-
-comment :: ToLogStr s => s -> Html a
-comment = enclose "<!-- " " -->" . toHtml
 
 -- | Create a < https://en.wikipedia.org/wiki/HTML_element#Syntax tag > for an element.
 element :: String -> Html a -> Html a
@@ -186,44 +135,6 @@ element = enclose <$> (enclose "<" ">" . toHtml) <*> (enclose "</" ">" . toHtml)
 
 element_ :: String -> Html a
 element_ = enclose "<" " />" . toHtml
-
-{- | Used for applying attributes.
-
- You should not define your own instances of this class.
--}
-class Element html where
-    {- | Apply an attribute to an element.
-
-     >>> printf $ img ! src "foo.png"
-     <img src="foo.png" />
-
-     This can be used on nested elements as well:
-
-     >>> printf $ p ! style "float: right" $ "Hello!"
-     <p style="float: right">Hello!</p>
-    -}
-    (!) :: html -> Attr -> html
-
-instance Element (Html a) where
-    h ! (Attr f) = f h
-    {-# INLINE (!) #-}
-
-instance Element (Html a -> Html b) where
-    h ! f = (! f) . h
-    {-# INLINE (!) #-}
-
-{- | Shorthand for setting an attribute depending on a conditional.
-
- Example:
-
- > p !? (isBig, A.class "big") $ "Hello"
-
- Gives the same result as:
-
- > (if isBig then p ! A.class "big" else p) "Hello"
--}
-(!?) :: Element html => html -> (Bool, Attr) -> html
-(!?) h (c, a) = if c then h ! a else h
 
 -- Elements
 

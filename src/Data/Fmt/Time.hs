@@ -22,7 +22,8 @@ module Data.Fmt.Time (
     years,
 ) where
 
-import Data.Fmt as Fmt hiding (s)
+import Data.Fmt
+import qualified Data.Fmt.Code as Fmt
 import Data.String
 import Data.Time (FormatTime, formatTime, defaultTimeLocale)
 import Data.Time.Format.ISO8601 (ISO8601, iso8601Show)

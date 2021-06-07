@@ -1,189 +1,202 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE ViewPatterns #-}
 
 {- | Html5 formatting.
 
  The API is similar to < https://hackage.haskell.org/package/blaze-html >.
 -}
 module Data.Fmt.Attr (
+    -- * Html
+    Html,
+    Attr,
+    toHtml,
+    comment,
+    Element (..),
+    (!?),
+
     -- * Attributes
-      accept
-    , acceptCharset
-    , accesskey
-    , action
-    , alt
-    , async
-    , autocomplete
-    , autofocus
-    , autoplay
-    , challenge
-    , charset
-    , checked
-    , cite
-    , class_
-    , cols
-    , colspan
-    , content
-    , contenteditable
-    , contextmenu
-    , controls
-    , coords
-    , data_
-    , datetime
-    , defer
-    , dir
-    , disabled
-    , draggable
-    , enctype
-    , for
-    , form
-    , formaction
-    , formenctype
-    , formmethod
-    , formnovalidate
-    , formtarget
-    , headers
-    , height
-    , hidden
-    , high
-    , href
-    , hreflang
-    , httpEquiv
-    , icon
-    , id
-    , ismap
-    , item
-    , itemprop
-    , itemscope
-    , itemtype
-    , keytype
-    , label
-    , lang
-    , list
-    , loop
-    , low
-    , manifest
-    , max
-    , maxlength
-    , media
-    , method
-    , min
-    , multiple
-    , name
-    , novalidate
-    , onbeforeonload
-    , onbeforeprint
-    , onblur
-    , oncanplay
-    , oncanplaythrough
-    , onchange
-    , onclick
-    , oncontextmenu
-    , ondblclick
-    , ondrag
-    , ondragend
-    , ondragenter
-    , ondragleave
-    , ondragover
-    , ondragstart
-    , ondrop
-    , ondurationchange
-    , onemptied
-    , onended
-    , onerror
-    , onfocus
-    , onformchange
-    , onforminput
-    , onhaschange
-    , oninput
-    , oninvalid
-    , onkeydown
-    , onkeyup
-    , onload
-    , onloadeddata
-    , onloadedmetadata
-    , onloadstart
-    , onmessage
-    , onmousedown
-    , onmousemove
-    , onmouseout
-    , onmouseover
-    , onmouseup
-    , onmousewheel
-    , ononline
-    , onpagehide
-    , onpageshow
-    , onpause
-    , onplay
-    , onplaying
-    , onprogress
-    , onpropstate
-    , onratechange
-    , onreadystatechange
-    , onredo
-    , onresize
-    , onscroll
-    , onseeked
-    , onseeking
-    , onselect
-    , onstalled
-    , onstorage
-    , onsubmit
-    , onsuspend
-    , ontimeupdate
-    , onundo
-    , onunload
-    , onvolumechange
-    , onwaiting
-    , open
-    , optimum
-    , pattern
-    , ping
-    , placeholder
-    , preload
-    , pubdate
-    , radiogroup
-    , readonly
-    , rel
-    , required
-    , reversed
-    , role
-    , rows
-    , rowspan
-    , sandbox
-    , scope
-    , scoped
-    , seamless
-    , selected
-    , shape
-    , size
-    , sizes
-    , span
-    , spellcheck
-    , src
-    , srcdoc
-    , start
-    , step
-    , style
-    , subject
-    , summary
-    , tabindex
-    , target
-    , title
-    , type_
-    , usemap
-    , value
-    , width
-    , wrap
-    , xmlns
+    accept,
+    acceptCharset,
+    accesskey,
+    action,
+    alt,
+    async,
+    autocomplete,
+    autofocus,
+    autoplay,
+    challenge,
+    charset,
+    checked,
+    cite,
+    class_,
+    cols,
+    colspan,
+    content,
+    contenteditable,
+    contextmenu,
+    controls,
+    coords,
+    data_,
+    datetime,
+    defer,
+    dir,
+    disabled,
+    draggable,
+    enctype,
+    for,
+    form,
+    formaction,
+    formenctype,
+    formmethod,
+    formnovalidate,
+    formtarget,
+    headers,
+    height,
+    hidden,
+    high,
+    href,
+    hreflang,
+    httpEquiv,
+    icon,
+    id,
+    ismap,
+    item,
+    itemprop,
+    itemscope,
+    itemtype,
+    keytype,
+    label,
+    lang,
+    list,
+    loop,
+    low,
+    manifest,
+    max,
+    maxlength,
+    media,
+    method,
+    min,
+    multiple,
+    name,
+    novalidate,
+    onbeforeonload,
+    onbeforeprint,
+    onblur,
+    oncanplay,
+    oncanplaythrough,
+    onchange,
+    onclick,
+    oncontextmenu,
+    ondblclick,
+    ondrag,
+    ondragend,
+    ondragenter,
+    ondragleave,
+    ondragover,
+    ondragstart,
+    ondrop,
+    ondurationchange,
+    onemptied,
+    onended,
+    onerror,
+    onfocus,
+    onformchange,
+    onforminput,
+    onhaschange,
+    oninput,
+    oninvalid,
+    onkeydown,
+    onkeyup,
+    onload,
+    onloadeddata,
+    onloadedmetadata,
+    onloadstart,
+    onmessage,
+    onmousedown,
+    onmousemove,
+    onmouseout,
+    onmouseover,
+    onmouseup,
+    onmousewheel,
+    ononline,
+    onpagehide,
+    onpageshow,
+    onpause,
+    onplay,
+    onplaying,
+    onprogress,
+    onpropstate,
+    onratechange,
+    onreadystatechange,
+    onredo,
+    onresize,
+    onscroll,
+    onseeked,
+    onseeking,
+    onselect,
+    onstalled,
+    onstorage,
+    onsubmit,
+    onsuspend,
+    ontimeupdate,
+    onundo,
+    onunload,
+    onvolumechange,
+    onwaiting,
+    open,
+    optimum,
+    pattern,
+    ping,
+    placeholder,
+    preload,
+    pubdate,
+    radiogroup,
+    readonly,
+    rel,
+    required,
+    reversed,
+    role,
+    rows,
+    rowspan,
+    sandbox,
+    scope,
+    scoped,
+    seamless,
+    selected,
+    shape,
+    size,
+    sizes,
+    span,
+    spellcheck,
+    src,
+    srcdoc,
+    start,
+    step,
+    style,
+    subject,
+    summary,
+    tabindex,
+    target,
+    title,
+    type_,
+    usemap,
+    value,
+    width,
+    wrap,
+    xmlns,
 ) where
 
-import Prelude ()
-import Data.Fmt (ToLogStr)
-import Data.Fmt.Html (attr, Attr)
+import Data.Fmt
+import Prelude (Maybe(..), Eq(..), (||), ($), Monoid(..))
+import qualified Data.ByteString.Char8 as B
+
+attr :: ToLogStr s => LogStr -> s -> Attr
+attr k v = Attr $ splitWith f g
+  where
+    f = B.break $ \c -> c == '/' || c == '>'
+    g l r0 = case B.uncons r0 of
+        Just ('/', r) -> toHtml l % fmt k % "=" % quotes (toHtml v) % fmt " /" % toHtml r
+        Just ('>', r) -> toHtml l % " " % fmt k % "=" % quotes (toHtml v) % fmt ">" % toHtml r
+        _ -> fmt mempty
 
 -- Attributes
 
@@ -834,7 +847,6 @@ formnovalidate ::
     Attr
 formnovalidate = attr "formnovalidate"
 {-# INLINE formnovalidate #-}
-
 
 {- | Combinator for the @formtarget@ attribute.
 
@@ -1919,7 +1931,6 @@ onkeydown ::
 onkeydown = attr "onkeydown"
 {-# INLINE onkeydown #-}
 
-
 {- | Combinator for the @onkeyup@ attribute.
 
  Example:
@@ -2014,7 +2025,6 @@ onloadstart ::
     Attr
 onloadstart = attr "onloadstart"
 {-# INLINE onloadstart #-}
-
 
 {- | Combinator for the @onmessage@ attribute.
 
