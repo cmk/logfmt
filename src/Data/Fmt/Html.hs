@@ -1,2166 +1,2177 @@
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Rank2Types #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE ExistentialQuantification #-}
-module Data.Fmt.Html where
+{-# LANGUAGE ViewPatterns #-}
+
+{- | Html5 formatting.
+
+ The API is similar to < https://hackage.haskell.org/package/blaze-html >.
+-}
+module Data.Fmt.Html (
+    -- * Html
+    Html,
+    Attr (..),
+    attr,
+    toHtml,
+    comment,
+    element,
+    element_,
+    Element (..),
+    (!?),
+
+    -- * Elements
+    docType,
+    docTypeHtml,
+    a,
+    abbr,
+    address,
+    area,
+    article,
+    aside,
+    audio,
+    b,
+    base,
+    bdo,
+    blockquote,
+    body,
+    br,
+    button,
+    canvas,
+    caption,
+    cite,
+    code,
+    col,
+    colgroup,
+    command,
+    datalist,
+    dd,
+    del,
+    details,
+    dfn,
+    div,
+    dl,
+    dt,
+    em,
+    embed,
+    fieldset,
+    figcaption,
+    figure,
+    footer,
+    form,
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    head,
+    header,
+    hgroup,
+    hr,
+    html,
+    i,
+    iframe,
+    img,
+    input,
+    ins,
+    kbd,
+    keygen,
+    label,
+    legend,
+    li,
+    link,
+    main,
+    map,
+    mark,
+    menu,
+    menuitem,
+    meta,
+    meter,
+    nav,
+    noscript,
+    object,
+    ol,
+    optgroup,
+    option,
+    output,
+    p,
+    param,
+    pre,
+    progress,
+    q,
+    rp,
+    rt,
+    ruby,
+    samp,
+    script,
+    section,
+    select,
+    small,
+    source,
+    span,
+    strong,
+    style,
+    sub,
+    summary,
+    sup,
+    table,
+    tbody,
+    td,
+    textarea,
+    tfoot,
+    th,
+    thead,
+    time,
+    title,
+    tr,
+    track,
+    u,
+    ul,
+    var,
+    video,
+    wbr,
+
+    -- * Attributes
+) where
 
 import Control.Monad
-import Data.Fmt.Type as Fmt
-import Data.Bifunctor (first)
-import Data.Monoid (Endo(..))
---import Data.List (intersperse)
+import qualified Data.ByteString.Char8 as B
+import Data.Fmt as Fmt hiding (b, u)
 
---TODO 
--- investigate do notation for Fmt, can it replicate blaze?
--- function comp fold. see lady's library
--- Elt and/or Attr newtypes?
+import Prelude hiding (div, head, map, span)
 
---type Html m a = Fmt m a a
+-- > runLogFmt $ numbers 2
+-- "<html><p>A list of numbers:</p><html><ul><li>1</li><li>2</li></ul></html><p>The end.</p></html>"
+numbers :: Int -> Html LogStr
+numbers n = html $ do
+    l <- ul . cat $ li . toHtml <$> [1 .. n]
+    cat
+        [ p "A list of numbers:"
+        , fmt l
+        , p "The end."
+        ]
 
+--type Attr = forall a. Endo (Html a)
 
-type Html a = LogFmt a a
+type Html a = Fmt LogStr a a
 
-type Tag a = (Html a, Maybe (Html a))
+-- | Type for an attribute.
+newtype Attr = Attr (forall a. Html a -> Html a)
 
-type Attr = forall a. Endo (Tag a)
+instance Semigroup Attr where
+    Attr f <> Attr g = Attr (g . f)
 
-
--- | Create a < https://en.wikipedia.org/wiki/HTML_element#Syntax tag > for an element.
-tag :: LogStr -> Tag a
-tag = (,) <$> prefix "<" . fmt <*> Just . enclose "</" ">" . fmt
-
--- | Create a tag for a < https://en.wikipedia.org/wiki/HTML_element#Void_elements void > element.
-tag_ :: LogStr -> Tag a
-tag_ = (,) <$> prefix "<" . fmt <*> const Nothing
+instance Monoid Attr where
+    mempty = Attr id
 
 attr :: ToLogStr s => LogStr -> s -> Attr
-attr a v = Endo $ first (% fmt a % "=" % quotes (logFmt v))
-
--- | Apply an attribute to an element.
---
--- Example:
---
--- > img ! src "foo.png"
---
--- Result:
---
--- > <img src="foo.png" />
---
--- This can be used on nested elements as well.
---
--- Example:
---
--- > p ! style "float: right" $ "Hello!"
---
--- Result:
---
--- > <p style="float: right">Hello!</p>
---
--- λ> h = a ! alt "bar" ! alt "baz" !$ "Hello."
--- λ> printf h
--- <a alt="bar" alt="baz">Hello.</a>
-{-# INLINE (!) #-}
-(!) :: Tag a -> Attr -> Tag a
-(l, r) ! Endo f = f (suffix " " l, r)
-
-infixr 1 !$
-
-(!$) :: Tag a -> Html a -> Html a
-(!$) = elt
-
--- λ> h = input ! type_ "checkbox" !$ comment "This is for checkboxes"
--- λ> printf h
--- <input type="checkbox" /> <!-- This is for checkboxes -->
-elt :: Tag a -> Html a -> Html a
-elt (l, mr) h =
-    case mr of
-      Just r  -> enclose (suffix ">" l) r h
-      Nothing -> suffix " />" l % " " % h
-
-comment :: ToLogStr s => s -> Html a
-comment = enclose "<!-- " " -->" . logFmt
-
+attr k v = Attr $ splitWith f g
+  where
+    f = B.break $ \c -> c == '/' || c == '>'
+    g l r0 = case B.uncons r0 of
+        Just ('/', r) -> toHtml l % fmt k % "=" % quotes (toHtml v) % fmt " /" % toHtml r
+        Just ('>', r) -> toHtml l % " " % fmt k % "=" % quotes (toHtml v) % fmt ">" % toHtml r
+        _ -> fmt mempty
 
 toHtml :: ToLogStr s => s -> Html a
 toHtml = logFmt
 
---toHtml :: ToLogStr s => LogFmt s LogStr
---toHtml = arr @LogFmt toLogStr
+comment :: ToLogStr s => s -> Html a
+comment = enclose "<!-- " " -->" . toHtml
 
--- | Combinator for the @\<html>@ element.
---
--- Example:
---
--- > html $ a !$ toHtml "foo"
---
--- Result:
---
--- > <html><a>foo</a></html>
---
-html :: Html a -- ^ Inner HTML.
-     -> Html a -- ^ Resulting HTML.
-html = elt $ tag "html"
-{-# INLINE html #-}
+-- | Create a < https://en.wikipedia.org/wiki/HTML_element#Syntax tag > for an element.
+element :: String -> Html a -> Html a
+element = enclose <$> (enclose "<" ">" . toHtml) <*> (enclose "</" ">" . toHtml)
 
+element_ :: String -> Html a
+element_ = enclose "<" " />" . toHtml
 
---runHtml :: Html () -> LogStr
+{- | Used for applying attributes.
 
-numbers :: Int -> Html a
-numbers n = html $ do
-     head' !$ do
-         elt title "Natural numbers"
-     body !$ do
-         p "A list of natural numbers:"
-         --ul !$ forM_ [1 .. n] (elt li . toHtml)
-         ul . cat $ li . toHtml <$> [1 .. (n :: Int)]
-         
--- | Combinator for the @\<a>@ element.
---
--- Example:
---
--- > printf $ a $ span "foo"
---
--- Result:
---
--- > <a><span>foo</span></a>
---
---a :: (Semigroup m, IsString m) => Html m a -> Html m a
+ You should not define your own instances of this class.
+-}
+class Element html where
+    {- | Apply an attribute to an element.
 
-a :: Tag a
-a = tag "a"
-{-# INLINE a #-}
+     >>> printf $ img ! src "foo.png"
+     <img src="foo.png" />
 
-p = elt $ tag "p"
-{-# INLINE p #-}
+     This can be used on nested elements as well:
 
-li = elt $ tag "li"
-{-# INLINE li #-}
+     >>> printf $ p ! style "float: right" $ "Hello!"
+     <p style="float: right">Hello!</p>
+    -}
+    (!) :: html -> Attr -> html
 
-ul = elt $ tag "ul"
-{-# INLINE ul #-}
+instance Element (Html a) where
+    h ! (Attr f) = f h
+    {-# INLINE (!) #-}
 
-head' = tag "head"
-{-# INLINE head' #-}
+instance Element (Html a -> Html b) where
+    h ! f = (! f) . h
+    {-# INLINE (!) #-}
 
-body = tag "body"
-{-# INLINE body #-}
+{- | Shorthand for setting an attribute depending on a conditional.
 
-title = tag "title"
-{-# INLINE title #-}
+ Example:
 
-iframe = tag "iframe"
+ > p !? (isBig, A.class "big") $ "Hello"
 
--- | Combinator for the @\<img />@ element.
---
--- Example:
---
--- > img
---
--- Result:
---
--- > <img />
---
-img :: Tag a
-img = tag_ "img"
-{-# INLINE img #-}
+ Gives the same result as:
 
-input :: Tag a
-input = tag_ "input"
+ > (if isBig then p ! A.class "big" else p) "Hello"
+-}
+(!?) :: Element html => html -> (Bool, Attr) -> html
+(!?) h (c, a) = if c then h ! a else h
 
--- | Combinator for the @alt@ attribute.
---
--- Example:
---
--- > div ! alt "bar" $ "Hello."
---
--- Result:
---
--- > <div alt="bar">Hello.</div>
---
---alt :: (Semigroup m, IsString m) => Value m a -> Html m a
-alt :: ToLogStr s => s -> Attr
-alt = attr "alt"
-{-# INLINE alt #-}
+-- Elements
 
-type_ :: ToLogStr s => s -> Attr
-type_ = attr "type"
-{-# INLINE type_ #-}
+-------------------------
 
-{-
- -
+{- | Combinator for the document type. This should be placed at the top
+ of every HTML page.
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:156
---
--- | Combinator for the document type. This should be placed at the top
--- of every HTML page.
---
--- Example:
---
--- > docType
---
--- Result:
---
--- > <!DOCTYPE HTML>
---
-docType :: Html  -- ^ The document type HTML.
-docType = preEscapedText "<!DOCTYPE HTML>\n"
+ Example:
+
+ > docType
+
+ Result:
+
+ > <!DOCTYPE HTML>
+-}
+docType ::
+    -- | The document type HTML.
+    Html a
+docType = fmt "<!DOCTYPE HTML>\n"
 {-# INLINE docType #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:177
---
--- | Combinator for the @\<html>@ element. This combinator will also
--- insert the correct doctype.
---
--- Example:
---
--- > docTypeHtml $ span $ toHtml "foo"
---
--- Result:
---
--- > <!DOCTYPE HTML>
--- > <html><span>foo</span></html>
---
-docTypeHtml :: Html  -- ^ Inner HTML.
-            -> Html  -- ^ Resulting HTML.
-docTypeHtml inner = docType >> html inner
+{- | Combinator for the @\<html>@ element. This combinator will also
+ insert the correct doctype.
+
+ Example:
+
+ > docTypeHtml $ span $ fmt "foo"
+
+ Result:
+
+ > <!DOCTYPE HTML>
+ > <html><span>foo</span></html>
+-}
+docTypeHtml ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+docTypeHtml inner = docType % html inner
 {-# INLINE docTypeHtml #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<a>@ element.
---
--- Example:
---
--- > a $ span $ toHtml "foo"
---
--- Result:
---
--- > <a><span>foo</span></a>
---
-a :: Html  -- ^ Inner HTML.
-  -> Html  -- ^ Resulting HTML.
-a = Parent "a" "<a" "</a>"
+{- | Combinator for the @\<a>@ element.
+
+ Example:
+
+ > a $ span $ fmt "foo"
+
+ Result:
+
+ > <a><span>foo</span></a>
+-}
+a ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+a = element "a"
 {-# INLINE a #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<abbr>@ element.
---
--- Example:
---
--- > abbr $ span $ toHtml "foo"
---
--- Result:
---
--- > <abbr><span>foo</span></abbr>
---
-abbr :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-abbr = Parent "abbr" "<abbr" "</abbr>"
+{- | Combinator for the @\<abbr>@ element.
+
+ Example:
+
+ > abbr $ span $ fmt "foo"
+
+ Result:
+
+ > <abbr><span>foo</span></abbr>
+-}
+abbr ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+abbr = element "abbr"
 {-# INLINE abbr #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<address>@ element.
---
--- Example:
---
--- > address $ span $ toHtml "foo"
---
--- Result:
---
--- > <address><span>foo</span></address>
---
-address :: Html  -- ^ Inner HTML.
-        -> Html  -- ^ Resulting HTML.
-address = Parent "address" "<address" "</address>"
+{- | Combinator for the @\<address>@ element.
+
+ Example:
+
+ > address $ span $ fmt "foo"
+
+ Result:
+
+ > <address><span>foo</span></address>
+-}
+address ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+address = element "address"
 {-# INLINE address #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<area />@ element.
---
--- Example:
---
--- > area
---
--- Result:
---
--- > <area />
---
-area :: Html  -- ^ Resulting HTML.
-area = Leaf "area" "<area" ">" ()
+{- | Combinator for the @\<area />@ element.
+
+ Example:
+
+ > area
+
+ Result:
+
+ > <area />
+-}
+area ::
+    -- | Resulting HTML.
+    Html a
+area = element_ "area"
 {-# INLINE area #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<article>@ element.
---
--- Example:
---
--- > article $ span $ toHtml "foo"
---
--- Result:
---
--- > <article><span>foo</span></article>
---
-article :: Html  -- ^ Inner HTML.
-        -> Html  -- ^ Resulting HTML.
-article = Parent "article" "<article" "</article>"
+{- | Combinator for the @\<article>@ element.
+
+ Example:
+
+ > article $ span $ fmt "foo"
+
+ Result:
+
+ > <article><span>foo</span></article>
+-}
+article ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+article = element "article"
 {-# INLINE article #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<aside>@ element.
---
--- Example:
---
--- > aside $ span $ toHtml "foo"
---
--- Result:
---
--- > <aside><span>foo</span></aside>
---
-aside :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-aside = Parent "aside" "<aside" "</aside>"
+{- | Combinator for the @\<aside>@ element.
+
+ Example:
+
+ > aside $ span $ fmt "foo"
+
+ Result:
+
+ > <aside><span>foo</span></aside>
+-}
+aside ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+aside = element "aside"
 {-# INLINE aside #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<audio>@ element.
---
--- Example:
---
--- > audio $ span $ toHtml "foo"
---
--- Result:
---
--- > <audio><span>foo</span></audio>
---
-audio :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-audio = Parent "audio" "<audio" "</audio>"
+{- | Combinator for the @\<audio>@ element.
+
+ Example:
+
+ > audio $ span $ fmt "foo"
+
+ Result:
+
+ > <audio><span>foo</span></audio>
+-}
+audio ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+audio = element "audio"
 {-# INLINE audio #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<b>@ element.
---
--- Example:
---
--- > b $ span $ toHtml "foo"
---
--- Result:
---
--- > <b><span>foo</span></b>
---
-b :: Html  -- ^ Inner HTML.
-  -> Html  -- ^ Resulting HTML.
-b = Parent "b" "<b" "</b>"
+{- | Combinator for the @\<b>@ element.
+
+ Example:
+
+ > b $ span $ fmt "foo"
+
+ Result:
+
+ > <b><span>foo</span></b>
+-}
+b ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+b = element "b"
 {-# INLINE b #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<base />@ element.
---
--- Example:
---
--- > base
---
--- Result:
---
--- > <base />
---
-base :: Html  -- ^ Resulting HTML.
-base = Leaf "base" "<base" ">" ()
+{- | Combinator for the @\<base />@ element.
+
+ Example:
+
+ > base
+
+ Result:
+
+ > <base />
+-}
+base ::
+    -- | Resulting HTML.
+    Html a
+base = element_ "base"
 {-# INLINE base #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<bdo>@ element.
---
--- Example:
---
--- > bdo $ span $ toHtml "foo"
---
--- Result:
---
--- > <bdo><span>foo</span></bdo>
---
-bdo :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-bdo = Parent "bdo" "<bdo" "</bdo>"
+{- | Combinator for the @\<bdo>@ element.
+
+ Example:
+
+ > bdo $ span $ fmt "foo"
+
+ Result:
+
+ > <bdo><span>foo</span></bdo>
+-}
+bdo ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+bdo = element "bdo"
 {-# INLINE bdo #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<blockquote>@ element.
---
--- Example:
---
--- > blockquote $ span $ toHtml "foo"
---
--- Result:
---
--- > <blockquote><span>foo</span></blockquote>
---
-blockquote :: Html  -- ^ Inner HTML.
-           -> Html  -- ^ Resulting HTML.
-blockquote = Parent "blockquote" "<blockquote" "</blockquote>"
+{- | Combinator for the @\<blockquote>@ element.
+
+ Example:
+
+ > blockquote $ span $ fmt "foo"
+
+ Result:
+
+ > <blockquote><span>foo</span></blockquote>
+-}
+blockquote ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+blockquote = element "blockquote"
 {-# INLINE blockquote #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<body>@ element.
---
--- Example:
---
--- > body $ span $ toHtml "foo"
---
--- Result:
---
--- > <body><span>foo</span></body>
---
-body :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-body = Parent "body" "<body" "</body>"
+{- | Combinator for the @\<body>@ element.
+
+ Example:
+
+ > body $ span $ fmt "foo"
+
+ Result:
+
+ > <body><span>foo</span></body>
+-}
+body ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+body = element "body"
 {-# INLINE body #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<br />@ element.
---
--- Example:
---
--- > br
---
--- Result:
---
--- > <br />
---
-br :: Html  -- ^ Resulting HTML.
-br = Leaf "br" "<br" ">" ()
+{- | Combinator for the @\<br />@ element.
+
+ Example:
+
+ > br
+
+ Result:
+
+ > <br />
+-}
+br ::
+    -- | Resulting HTML.
+    Html a
+br = element_ "br"
 {-# INLINE br #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<button>@ element.
---
--- Example:
---
--- > button $ span $ toHtml "foo"
---
--- Result:
---
--- > <button><span>foo</span></button>
---
-button :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-button = Parent "button" "<button" "</button>"
+{- | Combinator for the @\<button>@ element.
+
+ Example:
+
+ > button $ span $ fmt "foo"
+
+ Result:
+
+ > <button><span>foo</span></button>
+-}
+button ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+button = element "button"
 {-# INLINE button #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<canvas>@ element.
---
--- Example:
---
--- > canvas $ span $ toHtml "foo"
---
--- Result:
---
--- > <canvas><span>foo</span></canvas>
---
-canvas :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-canvas = Parent "canvas" "<canvas" "</canvas>"
+{- | Combinator for the @\<canvas>@ element.
+
+ Example:
+
+ > canvas $ span $ fmt "foo"
+
+ Result:
+
+ > <canvas><span>foo</span></canvas>
+-}
+canvas ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+canvas = element "canvas"
 {-# INLINE canvas #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<caption>@ element.
---
--- Example:
---
--- > caption $ span $ toHtml "foo"
---
--- Result:
---
--- > <caption><span>foo</span></caption>
---
-caption :: Html  -- ^ Inner HTML.
-        -> Html  -- ^ Resulting HTML.
-caption = Parent "caption" "<caption" "</caption>"
+{- | Combinator for the @\<caption>@ element.
+
+ Example:
+
+ > caption $ span $ fmt "foo"
+
+ Result:
+
+ > <caption><span>foo</span></caption>
+-}
+caption ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+caption = element "caption"
 {-# INLINE caption #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<cite>@ element.
---
--- Example:
---
--- > cite $ span $ toHtml "foo"
---
--- Result:
---
--- > <cite><span>foo</span></cite>
---
-cite :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-cite = Parent "cite" "<cite" "</cite>"
+{- | Combinator for the @\<cite>@ element.
+
+ Example:
+
+ > cite $ span $ fmt "foo"
+
+ Result:
+
+ > <cite><span>foo</span></cite>
+-}
+cite ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+cite = element "cite"
 {-# INLINE cite #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<code>@ element.
---
--- Example:
---
--- > code $ span $ toHtml "foo"
---
--- Result:
---
--- > <code><span>foo</span></code>
---
-code :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-code = Parent "code" "<code" "</code>"
+{- | Combinator for the @\<code>@ element.
+
+ Example:
+
+ > code $ span $ fmt "foo"
+
+ Result:
+
+ > <code><span>foo</span></code>
+-}
+code ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+code = element "code"
 {-# INLINE code #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<col />@ element.
---
--- Example:
---
--- > col
---
--- Result:
---
--- > <col />
---
-col :: Html  -- ^ Resulting HTML.
-col = Leaf "col" "<col" ">" ()
+{- | Combinator for the @\<col />@ element.
+
+ Example:
+
+ > col
+
+ Result:
+
+ > <col />
+-}
+col ::
+    -- | Resulting HTML.
+    Html a
+col = element_ "col"
 {-# INLINE col #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<colgroup>@ element.
---
--- Example:
---
--- > colgroup $ span $ toHtml "foo"
---
--- Result:
---
--- > <colgroup><span>foo</span></colgroup>
---
-colgroup :: Html  -- ^ Inner HTML.
-         -> Html  -- ^ Resulting HTML.
-colgroup = Parent "colgroup" "<colgroup" "</colgroup>"
+{- | Combinator for the @\<colgroup>@ element.
+
+ Example:
+
+ > colgroup $ span $ fmt "foo"
+
+ Result:
+
+ > <colgroup><span>foo</span></colgroup>
+-}
+colgroup ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+colgroup = element "colgroup"
 {-# INLINE colgroup #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<command>@ element.
---
--- Example:
---
--- > command $ span $ toHtml "foo"
---
--- Result:
---
--- > <command><span>foo</span></command>
---
-command :: Html  -- ^ Inner HTML.
-        -> Html  -- ^ Resulting HTML.
-command = Parent "command" "<command" "</command>"
+{- | Combinator for the @\<command>@ element.
+
+ Example:
+
+ > command $ span $ fmt "foo"
+
+ Result:
+
+ > <command><span>foo</span></command>
+-}
+command ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+command = element "command"
 {-# INLINE command #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<datalist>@ element.
---
--- Example:
---
--- > datalist $ span $ toHtml "foo"
---
--- Result:
---
--- > <datalist><span>foo</span></datalist>
---
-datalist :: Html  -- ^ Inner HTML.
-         -> Html  -- ^ Resulting HTML.
-datalist = Parent "datalist" "<datalist" "</datalist>"
+{- | Combinator for the @\<datalist>@ element.
+
+ Example:
+
+ > datalist $ span $ fmt "foo"
+
+ Result:
+
+ > <datalist><span>foo</span></datalist>
+-}
+datalist ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+datalist = element "datalist"
 {-# INLINE datalist #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<dd>@ element.
---
--- Example:
---
--- > dd $ span $ toHtml "foo"
---
--- Result:
---
--- > <dd><span>foo</span></dd>
---
-dd :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-dd = Parent "dd" "<dd" "</dd>"
+{- | Combinator for the @\<dd>@ element.
+
+ Example:
+
+ > dd $ span $ fmt "foo"
+
+ Result:
+
+ > <dd><span>foo</span></dd>
+-}
+dd ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+dd = element "dd"
 {-# INLINE dd #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<del>@ element.
---
--- Example:
---
--- > del $ span $ toHtml "foo"
---
--- Result:
---
--- > <del><span>foo</span></del>
---
-del :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-del = Parent "del" "<del" "</del>"
+{- | Combinator for the @\<del>@ element.
+
+ Example:
+
+ > del $ span $ fmt "foo"
+
+ Result:
+
+ > <del><span>foo</span></del>
+-}
+del ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+del = element "del"
 {-# INLINE del #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<details>@ element.
---
--- Example:
---
--- > details $ span $ toHtml "foo"
---
--- Result:
---
--- > <details><span>foo</span></details>
---
-details :: Html  -- ^ Inner HTML.
-        -> Html  -- ^ Resulting HTML.
-details = Parent "details" "<details" "</details>"
+{- | Combinator for the @\<details>@ element.
+
+ Example:
+
+ > details $ span $ fmt "foo"
+
+ Result:
+
+ > <details><span>foo</span></details>
+-}
+details ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+details = element "details"
 {-# INLINE details #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<dfn>@ element.
---
--- Example:
---
--- > dfn $ span $ toHtml "foo"
---
--- Result:
---
--- > <dfn><span>foo</span></dfn>
---
-dfn :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-dfn = Parent "dfn" "<dfn" "</dfn>"
+{- | Combinator for the @\<dfn>@ element.
+
+ Example:
+
+ > dfn $ span $ fmt "foo"
+
+ Result:
+
+ > <dfn><span>foo</span></dfn>
+-}
+dfn ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+dfn = element "dfn"
 {-# INLINE dfn #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<div>@ element.
---
--- Example:
---
--- > div $ span $ toHtml "foo"
---
--- Result:
---
--- > <div><span>foo</span></div>
---
-div :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-div = Parent "div" "<div" "</div>"
+{- | Combinator for the @\<div>@ element.
+
+ Example:
+
+ > div $ span $ fmt "foo"
+
+ Result:
+
+ > <div><span>foo</span></div>
+-}
+div ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+div = element "div"
 {-# INLINE div #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<dl>@ element.
---
--- Example:
---
--- > dl $ span $ toHtml "foo"
---
--- Result:
---
--- > <dl><span>foo</span></dl>
---
-dl :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-dl = Parent "dl" "<dl" "</dl>"
+{- | Combinator for the @\<dl>@ element.
+
+ Example:
+
+ > dl $ span $ fmt "foo"
+
+ Result:
+
+ > <dl><span>foo</span></dl>
+-}
+dl ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+dl = element "dl"
 {-# INLINE dl #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<dt>@ element.
---
--- Example:
---
--- > dt $ span $ toHtml "foo"
---
--- Result:
---
--- > <dt><span>foo</span></dt>
---
-dt :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-dt = Parent "dt" "<dt" "</dt>"
+{- | Combinator for the @\<dt>@ element.
+
+ Example:
+
+ > dt $ span $ fmt "foo"
+
+ Result:
+
+ > <dt><span>foo</span></dt>
+-}
+dt ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+dt = element "dt"
 {-# INLINE dt #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<em>@ element.
---
--- Example:
---
--- > em $ span $ toHtml "foo"
---
--- Result:
---
--- > <em><span>foo</span></em>
---
-em :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-em = Parent "em" "<em" "</em>"
+{- | Combinator for the @\<em>@ element.
+
+ Example:
+
+ > em $ span $ fmt "foo"
+
+ Result:
+
+ > <em><span>foo</span></em>
+-}
+em ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+em = element "em"
 {-# INLINE em #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<embed />@ element.
---
--- Example:
---
--- > embed
---
--- Result:
---
--- > <embed />
---
-embed :: Html  -- ^ Resulting HTML.
-embed = Leaf "embed" "<embed" ">" ()
+{- | Combinator for the @\<embed />@ element.
+
+ Example:
+
+ > embed
+
+ Result:
+
+ > <embed />
+-}
+embed ::
+    -- | Resulting HTML.
+    Html a
+embed = element_ "embed"
 {-# INLINE embed #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<fieldset>@ element.
---
--- Example:
---
--- > fieldset $ span $ toHtml "foo"
---
--- Result:
---
--- > <fieldset><span>foo</span></fieldset>
---
-fieldset :: Html  -- ^ Inner HTML.
-         -> Html  -- ^ Resulting HTML.
-fieldset = Parent "fieldset" "<fieldset" "</fieldset>"
+{- | Combinator for the @\<fieldset>@ element.
+
+ Example:
+
+ > fieldset $ span $ fmt "foo"
+
+ Result:
+
+ > <fieldset><span>foo</span></fieldset>
+-}
+fieldset ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+fieldset = element "fieldset"
 {-# INLINE fieldset #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<figcaption>@ element.
---
--- Example:
---
--- > figcaption $ span $ toHtml "foo"
---
--- Result:
---
--- > <figcaption><span>foo</span></figcaption>
---
-figcaption :: Html  -- ^ Inner HTML.
-           -> Html  -- ^ Resulting HTML.
-figcaption = Parent "figcaption" "<figcaption" "</figcaption>"
+{- | Combinator for the @\<figcaption>@ element.
+
+ Example:
+
+ > figcaption $ span $ fmt "foo"
+
+ Result:
+
+ > <figcaption><span>foo</span></figcaption>
+-}
+figcaption ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+figcaption = element "figcaption"
 {-# INLINE figcaption #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<figure>@ element.
---
--- Example:
---
--- > figure $ span $ toHtml "foo"
---
--- Result:
---
--- > <figure><span>foo</span></figure>
---
-figure :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-figure = Parent "figure" "<figure" "</figure>"
+{- | Combinator for the @\<figure>@ element.
+
+ Example:
+
+ > figure $ span $ fmt "foo"
+
+ Result:
+
+ > <figure><span>foo</span></figure>
+-}
+figure ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+figure = element "figure"
 {-# INLINE figure #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<footer>@ element.
---
--- Example:
---
--- > footer $ span $ toHtml "foo"
---
--- Result:
---
--- > <footer><span>foo</span></footer>
---
-footer :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-footer = Parent "footer" "<footer" "</footer>"
+{- | Combinator for the @\<footer>@ element.
+
+ Example:
+
+ > footer $ span $ fmt "foo"
+
+ Result:
+
+ > <footer><span>foo</span></footer>
+-}
+footer ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+footer = element "footer"
 {-# INLINE footer #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<form>@ element.
---
--- Example:
---
--- > form $ span $ toHtml "foo"
---
--- Result:
---
--- > <form><span>foo</span></form>
---
-form :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-form = Parent "form" "<form" "</form>"
+{- | Combinator for the @\<form>@ element.
+
+ Example:
+
+ > form $ span $ fmt "foo"
+
+ Result:
+
+ > <form><span>foo</span></form>
+-}
+form ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+form = element "form"
 {-# INLINE form #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<h1>@ element.
---
--- Example:
---
--- > h1 $ span $ toHtml "foo"
---
--- Result:
---
--- > <h1><span>foo</span></h1>
---
-h1 :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-h1 = Parent "h1" "<h1" "</h1>"
+{- | Combinator for the @\<h1>@ element.
+
+ Example:
+
+ > h1 $ span $ fmt "foo"
+
+ Result:
+
+ > <h1><span>foo</span></h1>
+-}
+h1 ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+h1 = element "h1"
 {-# INLINE h1 #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<h2>@ element.
---
--- Example:
---
--- > h2 $ span $ toHtml "foo"
---
--- Result:
---
--- > <h2><span>foo</span></h2>
---
-h2 :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-h2 = Parent "h2" "<h2" "</h2>"
+{- | Combinator for the @\<h2>@ element.
+
+ Example:
+
+ > h2 $ span $ fmt "foo"
+
+ Result:
+
+ > <h2><span>foo</span></h2>
+-}
+h2 ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+h2 = element "h2"
 {-# INLINE h2 #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<h3>@ element.
---
--- Example:
---
--- > h3 $ span $ toHtml "foo"
---
--- Result:
---
--- > <h3><span>foo</span></h3>
---
-h3 :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-h3 = Parent "h3" "<h3" "</h3>"
+{- | Combinator for the @\<h3>@ element.
+
+ Example:
+
+ > h3 $ span $ fmt "foo"
+
+ Result:
+
+ > <h3><span>foo</span></h3>
+-}
+h3 ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+h3 = element "h3"
 {-# INLINE h3 #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<h4>@ element.
---
--- Example:
---
--- > h4 $ span $ toHtml "foo"
---
--- Result:
---
--- > <h4><span>foo</span></h4>
---
-h4 :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-h4 = Parent "h4" "<h4" "</h4>"
+{- | Combinator for the @\<h4>@ element.
+
+ Example:
+
+ > h4 $ span $ fmt "foo"
+
+ Result:
+
+ > <h4><span>foo</span></h4>
+-}
+h4 ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+h4 = element "h4"
 {-# INLINE h4 #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<h5>@ element.
---
--- Example:
---
--- > h5 $ span $ toHtml "foo"
---
--- Result:
---
--- > <h5><span>foo</span></h5>
---
-h5 :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-h5 = Parent "h5" "<h5" "</h5>"
+{- | Combinator for the @\<h5>@ element.
+
+ Example:
+
+ > h5 $ span $ fmt "foo"
+
+ Result:
+
+ > <h5><span>foo</span></h5>
+-}
+h5 ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+h5 = element "h5"
 {-# INLINE h5 #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<h6>@ element.
---
--- Example:
---
--- > h6 $ span $ toHtml "foo"
---
--- Result:
---
--- > <h6><span>foo</span></h6>
---
-h6 :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-h6 = Parent "h6" "<h6" "</h6>"
+{- | Combinator for the @\<h6>@ element.
+
+ Example:
+
+ > h6 $ span $ fmt "foo"
+
+ Result:
+
+ > <h6><span>foo</span></h6>
+-}
+h6 ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+h6 = element "h6"
 {-# INLINE h6 #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<head>@ element.
---
--- Example:
---
--- > head $ span $ toHtml "foo"
---
--- Result:
---
--- > <head><span>foo</span></head>
---
-head :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-head = Parent "head" "<head" "</head>"
+{- | Combinator for the @\<head>@ element.
+
+ Example:
+
+ > head $ span $ fmt "foo"
+
+ Result:
+
+ > <head><span>foo</span></head>
+-}
+head ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+head = element "head"
 {-# INLINE head #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<header>@ element.
---
--- Example:
---
--- > header $ span $ toHtml "foo"
---
--- Result:
---
--- > <header><span>foo</span></header>
---
-header :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-header = Parent "header" "<header" "</header>"
+{- | Combinator for the @\<header>@ element.
+
+ Example:
+
+ > header $ span $ fmt "foo"
+
+ Result:
+
+ > <header><span>foo</span></header>
+-}
+header ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+header = element "header"
 {-# INLINE header #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<hgroup>@ element.
---
--- Example:
---
--- > hgroup $ span $ toHtml "foo"
---
--- Result:
---
--- > <hgroup><span>foo</span></hgroup>
---
-hgroup :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-hgroup = Parent "hgroup" "<hgroup" "</hgroup>"
+{- | Combinator for the @\<hgroup>@ element.
+
+ Example:
+
+ > hgroup $ span $ fmt "foo"
+
+ Result:
+
+ > <hgroup><span>foo</span></hgroup>
+-}
+hgroup ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+hgroup = element "hgroup"
 {-# INLINE hgroup #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<hr />@ element.
---
--- Example:
---
--- > hr
---
--- Result:
---
--- > <hr />
---
-hr :: Html  -- ^ Resulting HTML.
-hr = Leaf "hr" "<hr" ">" ()
+{- | Combinator for the @\<hr />@ element.
+
+ Example:
+
+ > hr
+
+ Result:
+
+ > <hr />
+-}
+hr ::
+    -- | Resulting HTML.
+    Html a
+hr = element_ "hr"
 {-# INLINE hr #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<html>@ element.
---
--- Example:
---
--- > html $ span $ toHtml "foo"
---
--- Result:
---
--- > <html><span>foo</span></html>
---
-html :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-html = Parent "html" "<html" "</html>"
+{- | Combinator for the @\<html>@ element.
+
+ Example:
+
+ > html $ span $ fmt "foo"
+
+ Result:
+
+ > <html><span>foo</span></html>
+-}
+html ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+html = element "html"
 {-# INLINE html #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<i>@ element.
---
--- Example:
---
--- > i $ span $ toHtml "foo"
---
--- Result:
---
--- > <i><span>foo</span></i>
---
-i :: Html  -- ^ Inner HTML.
-  -> Html  -- ^ Resulting HTML.
-i = Parent "i" "<i" "</i>"
+{- | Combinator for the @\<i>@ element.
+
+ Example:
+
+ > i $ span $ fmt "foo"
+
+ Result:
+
+ > <i><span>foo</span></i>
+-}
+i ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+i = element "i"
 {-# INLINE i #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<iframe>@ element.
---
--- Example:
---
--- > iframe $ span $ toHtml "foo"
---
--- Result:
---
--- > <iframe><span>foo</span></iframe>
---
-iframe :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-iframe = Parent "iframe" "<iframe" "</iframe>"
+{- | Combinator for the @\<iframe>@ element.
+
+ Example:
+
+ > iframe $ span $ fmt "foo"
+
+ Result:
+
+ > <iframe><span>foo</span></iframe>
+-}
+iframe ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+iframe = element "iframe"
 {-# INLINE iframe #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<img />@ element.
---
--- Example:
---
--- > img
---
--- Result:
---
--- > <img />
---
-img :: Html  -- ^ Resulting HTML.
-img = Leaf "img" "<img" ">" ()
+{- | Combinator for the @\<img />@ element.
+
+ Example:
+
+ > img
+
+ Result:
+
+ > <img />
+-}
+img ::
+    -- | Resulting HTML.
+    Html a
+img = element_ "img"
 {-# INLINE img #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<input />@ element.
---
--- Example:
---
--- > input
---
--- Result:
---
--- > <input />
---
-input :: Html  -- ^ Resulting HTML.
-input = Leaf "input" "<input" ">" ()
+{- | Combinator for the @\<input />@ element.
+
+ Example:
+
+ > input
+
+ Result:
+
+ > <input />
+-}
+input ::
+    -- | Resulting HTML.
+    Html a
+input = element_ "input"
 {-# INLINE input #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<ins>@ element.
---
--- Example:
---
--- > ins $ span $ toHtml "foo"
---
--- Result:
---
--- > <ins><span>foo</span></ins>
---
-ins :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-ins = Parent "ins" "<ins" "</ins>"
+{- | Combinator for the @\<ins>@ element.
+
+ Example:
+
+ > ins $ span $ fmt "foo"
+
+ Result:
+
+ > <ins><span>foo</span></ins>
+-}
+ins ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+ins = element "ins"
 {-# INLINE ins #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<kbd>@ element.
---
--- Example:
---
--- > kbd $ span $ toHtml "foo"
---
--- Result:
---
--- > <kbd><span>foo</span></kbd>
---
-kbd :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-kbd = Parent "kbd" "<kbd" "</kbd>"
+{- | Combinator for the @\<kbd>@ element.
+
+ Example:
+
+ > kbd $ span $ fmt "foo"
+
+ Result:
+
+ > <kbd><span>foo</span></kbd>
+-}
+kbd ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+kbd = element "kbd"
 {-# INLINE kbd #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<keygen />@ element.
---
--- Example:
---
--- > keygen
---
--- Result:
---
--- > <keygen />
---
-keygen :: Html  -- ^ Resulting HTML.
-keygen = Leaf "keygen" "<keygen" ">" ()
+{- | Combinator for the @\<keygen />@ element.
+
+ Example:
+
+ > keygen
+
+ Result:
+
+ > <keygen />
+-}
+keygen ::
+    -- | Resulting HTML.
+    Html a
+keygen = element_ "keygen"
 {-# INLINE keygen #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<label>@ element.
---
--- Example:
---
--- > label $ span $ toHtml "foo"
---
--- Result:
---
--- > <label><span>foo</span></label>
---
-label :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-label = Parent "label" "<label" "</label>"
+{- | Combinator for the @\<label>@ element.
+
+ Example:
+
+ > label $ span $ fmt "foo"
+
+ Result:
+
+ > <label><span>foo</span></label>
+-}
+label ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+label = element "label"
 {-# INLINE label #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<legend>@ element.
---
--- Example:
---
--- > legend $ span $ toHtml "foo"
---
--- Result:
---
--- > <legend><span>foo</span></legend>
---
-legend :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-legend = Parent "legend" "<legend" "</legend>"
+{- | Combinator for the @\<legend>@ element.
+
+ Example:
+
+ > legend $ span $ fmt "foo"
+
+ Result:
+
+ > <legend><span>foo</span></legend>
+-}
+legend ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+legend = element "legend"
 {-# INLINE legend #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<li>@ element.
---
--- Example:
---
--- > li $ span $ toHtml "foo"
---
--- Result:
---
--- > <li><span>foo</span></li>
---
-li :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-li = Parent "li" "<li" "</li>"
+{- | Combinator for the @\<li>@ element.
+
+ Example:
+
+ > li $ span $ fmt "foo"
+
+ Result:
+
+ > <li><span>foo</span></li>
+-}
+li ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+li = element "li"
 {-# INLINE li #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<link />@ element.
---
--- Example:
---
--- > link
---
--- Result:
---
--- > <link />
---
-link :: Html  -- ^ Resulting HTML.
-link = Leaf "link" "<link" ">" ()
+{- | Combinator for the @\<link />@ element.
+
+ Example:
+
+ > link
+
+ Result:
+
+ > <link />
+-}
+link ::
+    -- | Resulting HTML.
+    Html a
+link = element_ "link"
 {-# INLINE link #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<main>@ element.
---
--- Example:
---
--- > main $ span $ toHtml "foo"
---
--- Result:
---
--- > <main><span>foo</span></main>
---
-main :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-main = Parent "main" "<main" "</main>"
+{- | Combinator for the @\<main>@ element.
+
+ Example:
+
+ > main $ span $ fmt "foo"
+
+ Result:
+
+ > <main><span>foo</span></main>
+-}
+main ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+main = element "main"
 {-# INLINE main #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<map>@ element.
---
--- Example:
---
--- > map $ span $ toHtml "foo"
---
--- Result:
---
--- > <map><span>foo</span></map>
---
-map :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-map = Parent "map" "<map" "</map>"
+{- | Combinator for the @\<map>@ element.
+
+ Example:
+
+ > map $ span $ fmt "foo"
+
+ Result:
+
+ > <map><span>foo</span></map>
+-}
+map ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+map = element "map"
 {-# INLINE map #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<mark>@ element.
---
--- Example:
---
--- > mark $ span $ toHtml "foo"
---
--- Result:
---
--- > <mark><span>foo</span></mark>
---
-mark :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-mark = Parent "mark" "<mark" "</mark>"
+{- | Combinator for the @\<mark>@ element.
+
+ Example:
+
+ > mark $ span $ fmt "foo"
+
+ Result:
+
+ > <mark><span>foo</span></mark>
+-}
+mark ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+mark = element "mark"
 {-# INLINE mark #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<menu>@ element.
---
--- Example:
---
--- > menu $ span $ toHtml "foo"
---
--- Result:
---
--- > <menu><span>foo</span></menu>
---
-menu :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-menu = Parent "menu" "<menu" "</menu>"
+{- | Combinator for the @\<menu>@ element.
+
+ Example:
+
+ > menu $ span $ fmt "foo"
+
+ Result:
+
+ > <menu><span>foo</span></menu>
+-}
+menu ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+menu = element "menu"
 {-# INLINE menu #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<menuitem />@ element.
---
--- Example:
---
--- > menuitem
---
--- Result:
---
--- > <menuitem />
---
-menuitem :: Html  -- ^ Resulting HTML.
-menuitem = Leaf "menuitem" "<menuitem" ">" ()
+{- | Combinator for the @\<menuitem />@ element.
+
+ Example:
+
+ > menuitem
+
+ Result:
+
+ > <menuitem />
+-}
+menuitem ::
+    -- | Resulting HTML.
+    Html a
+menuitem = element_ "menuitem"
 {-# INLINE menuitem #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<meta />@ element.
---
--- Example:
---
--- > meta
---
--- Result:
---
--- > <meta />
---
-meta :: Html  -- ^ Resulting HTML.
-meta = Leaf "meta" "<meta" ">" ()
+{- | Combinator for the @\<meta />@ element.
+
+ Example:
+
+ > meta
+
+ Result:
+
+ > <meta />
+-}
+meta ::
+    -- | Resulting HTML.
+    Html a
+meta = element_ "meta"
 {-# INLINE meta #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<meter>@ element.
---
--- Example:
---
--- > meter $ span $ toHtml "foo"
---
--- Result:
---
--- > <meter><span>foo</span></meter>
---
-meter :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-meter = Parent "meter" "<meter" "</meter>"
+{- | Combinator for the @\<meter>@ element.
+
+ Example:
+
+ > meter $ span $ fmt "foo"
+
+ Result:
+
+ > <meter><span>foo</span></meter>
+-}
+meter ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+meter = element "meter"
 {-# INLINE meter #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<nav>@ element.
---
--- Example:
---
--- > nav $ span $ toHtml "foo"
---
--- Result:
---
--- > <nav><span>foo</span></nav>
---
-nav :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-nav = Parent "nav" "<nav" "</nav>"
+{- | Combinator for the @\<nav>@ element.
+
+ Example:
+
+ > nav $ span $ fmt "foo"
+
+ Result:
+
+ > <nav><span>foo</span></nav>
+-}
+nav ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+nav = element "nav"
 {-# INLINE nav #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<noscript>@ element.
---
--- Example:
---
--- > noscript $ span $ toHtml "foo"
---
--- Result:
---
--- > <noscript><span>foo</span></noscript>
---
-noscript :: Html  -- ^ Inner HTML.
-         -> Html  -- ^ Resulting HTML.
-noscript = Parent "noscript" "<noscript" "</noscript>"
+{- | Combinator for the @\<noscript>@ element.
+
+ Example:
+
+ > noscript $ span $ fmt "foo"
+
+ Result:
+
+ > <noscript><span>foo</span></noscript>
+-}
+noscript ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+noscript = element "noscript"
 {-# INLINE noscript #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<object>@ element.
---
--- Example:
---
--- > object $ span $ toHtml "foo"
---
--- Result:
---
--- > <object><span>foo</span></object>
---
-object :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-object = Parent "object" "<object" "</object>"
+{- | Combinator for the @\<object>@ element.
+
+ Example:
+
+ > object $ span $ fmt "foo"
+
+ Result:
+
+ > <object><span>foo</span></object>
+-}
+object ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+object = element "object"
 {-# INLINE object #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<ol>@ element.
---
--- Example:
---
--- > ol $ span $ toHtml "foo"
---
--- Result:
---
--- > <ol><span>foo</span></ol>
---
-ol :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-ol = Parent "ol" "<ol" "</ol>"
+{- | Combinator for the @\<ol>@ element.
+
+ Example:
+
+ > ol $ span $ fmt "foo"
+
+ Result:
+
+ > <ol><span>foo</span></ol>
+-}
+ol ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+ol = element "ol"
 {-# INLINE ol #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<optgroup>@ element.
---
--- Example:
---
--- > optgroup $ span $ toHtml "foo"
---
--- Result:
---
--- > <optgroup><span>foo</span></optgroup>
---
-optgroup :: Html  -- ^ Inner HTML.
-         -> Html  -- ^ Resulting HTML.
-optgroup = Parent "optgroup" "<optgroup" "</optgroup>"
+{- | Combinator for the @\<optgroup>@ element.
+
+ Example:
+
+ > optgroup $ span $ fmt "foo"
+
+ Result:
+
+ > <optgroup><span>foo</span></optgroup>
+-}
+optgroup ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+optgroup = element "optgroup"
 {-# INLINE optgroup #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<option>@ element.
---
--- Example:
---
--- > option $ span $ toHtml "foo"
---
--- Result:
---
--- > <option><span>foo</span></option>
---
-option :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-option = Parent "option" "<option" "</option>"
+{- | Combinator for the @\<option>@ element.
+
+ Example:
+
+ > option $ span $ fmt "foo"
+
+ Result:
+
+ > <option><span>foo</span></option>
+-}
+option ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+option = element "option"
 {-# INLINE option #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<output>@ element.
---
--- Example:
---
--- > output $ span $ toHtml "foo"
---
--- Result:
---
--- > <output><span>foo</span></output>
---
-output :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-output = Parent "output" "<output" "</output>"
+{- | Combinator for the @\<output>@ element.
+
+ Example:
+
+ > output $ span $ fmt "foo"
+
+ Result:
+
+ > <output><span>foo</span></output>
+-}
+output ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+output = element "output"
 {-# INLINE output #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<p>@ element.
---
--- Example:
---
--- > p $ span $ toHtml "foo"
---
--- Result:
---
--- > <p><span>foo</span></p>
---
-p :: Html  -- ^ Inner HTML.
-  -> Html  -- ^ Resulting HTML.
-p = Parent "p" "<p" "</p>"
+{- | Combinator for the @\<p>@ element.
+
+ Example:
+
+ > p $ span $ fmt "foo"
+
+ Result:
+
+ > <p><span>foo</span></p>
+-}
+p ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+p = element "p"
 {-# INLINE p #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<param />@ element.
---
--- Example:
---
--- > param
---
--- Result:
---
--- > <param />
---
-param :: Html  -- ^ Resulting HTML.
-param = Leaf "param" "<param" ">" ()
+{- | Combinator for the @\<param />@ element.
+
+ Example:
+
+ > param
+
+ Result:
+
+ > <param />
+-}
+param ::
+    -- | Resulting HTML.
+    Html a
+param = element_ "param"
 {-# INLINE param #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<pre>@ element.
---
--- Example:
---
--- > pre $ span $ toHtml "foo"
---
--- Result:
---
--- > <pre><span>foo</span></pre>
---
-pre :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-pre = Parent "pre" "<pre" "</pre>"
+{- | Combinator for the @\<pre>@ element.
+
+ Example:
+
+ > pre $ span $ fmt "foo"
+
+ Result:
+
+ > <pre><span>foo</span></pre>
+-}
+pre ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+pre = element "pre"
 {-# INLINE pre #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<progress>@ element.
---
--- Example:
---
--- > progress $ span $ toHtml "foo"
---
--- Result:
---
--- > <progress><span>foo</span></progress>
---
-progress :: Html  -- ^ Inner HTML.
-         -> Html  -- ^ Resulting HTML.
-progress = Parent "progress" "<progress" "</progress>"
+{- | Combinator for the @\<progress>@ element.
+
+ Example:
+
+ > progress $ span $ fmt "foo"
+
+ Result:
+
+ > <progress><span>foo</span></progress>
+-}
+progress ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+progress = element "progress"
 {-# INLINE progress #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<q>@ element.
---
--- Example:
---
--- > q $ span $ toHtml "foo"
---
--- Result:
---
--- > <q><span>foo</span></q>
---
-q :: Html  -- ^ Inner HTML.
-  -> Html  -- ^ Resulting HTML.
-q = Parent "q" "<q" "</q>"
+{- | Combinator for the @\<q>@ element.
+
+ Example:
+
+ > q $ span $ fmt "foo"
+
+ Result:
+
+ > <q><span>foo</span></q>
+-}
+q ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+q = element "q"
 {-# INLINE q #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<rp>@ element.
---
--- Example:
---
--- > rp $ span $ toHtml "foo"
---
--- Result:
---
--- > <rp><span>foo</span></rp>
---
-rp :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-rp = Parent "rp" "<rp" "</rp>"
+{- | Combinator for the @\<rp>@ element.
+
+ Example:
+
+ > rp $ span $ fmt "foo"
+
+ Result:
+
+ > <rp><span>foo</span></rp>
+-}
+rp ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+rp = element "rp"
 {-# INLINE rp #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<rt>@ element.
---
--- Example:
---
--- > rt $ span $ toHtml "foo"
---
--- Result:
---
--- > <rt><span>foo</span></rt>
---
-rt :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-rt = Parent "rt" "<rt" "</rt>"
+{- | Combinator for the @\<rt>@ element.
+
+ Example:
+
+ > rt $ span $ fmt "foo"
+
+ Result:
+
+ > <rt><span>foo</span></rt>
+-}
+rt ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+rt = element "rt"
 {-# INLINE rt #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<ruby>@ element.
---
--- Example:
---
--- > ruby $ span $ toHtml "foo"
---
--- Result:
---
--- > <ruby><span>foo</span></ruby>
---
-ruby :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-ruby = Parent "ruby" "<ruby" "</ruby>"
+{- | Combinator for the @\<ruby>@ element.
+
+ Example:
+
+ > ruby $ span $ fmt "foo"
+
+ Result:
+
+ > <ruby><span>foo</span></ruby>
+-}
+ruby ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+ruby = element "ruby"
 {-# INLINE ruby #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<samp>@ element.
---
--- Example:
---
--- > samp $ span $ toHtml "foo"
---
--- Result:
---
--- > <samp><span>foo</span></samp>
---
-samp :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-samp = Parent "samp" "<samp" "</samp>"
+{- | Combinator for the @\<samp>@ element.
+
+ Example:
+
+ > samp $ span $ fmt "foo"
+
+ Result:
+
+ > <samp><span>foo</span></samp>
+-}
+samp ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+samp = element "samp"
 {-# INLINE samp #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<script>@ element.
---
--- Example:
---
--- > script $ span $ toHtml "foo"
---
--- Result:
---
--- > <script><span>foo</span></script>
---
-script :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-script = Parent "script" "<script" "</script>" . external
+{- | Combinator for the @\<script>@ element.
+
+ Example:
+
+ > script $ span $ fmt "foo"
+
+ Result:
+
+ > <script><span>foo</span></script>
+-}
+script ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+script = element "script"
 {-# INLINE script #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<section>@ element.
---
--- Example:
---
--- > section $ span $ toHtml "foo"
---
--- Result:
---
--- > <section><span>foo</span></section>
---
-section :: Html  -- ^ Inner HTML.
-        -> Html  -- ^ Resulting HTML.
-section = Parent "section" "<section" "</section>"
+{- | Combinator for the @\<section>@ element.
+
+ Example:
+
+ > section $ span $ fmt "foo"
+
+ Result:
+
+ > <section><span>foo</span></section>
+-}
+section ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+section = element "section"
 {-# INLINE section #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<select>@ element.
---
--- Example:
---
--- > select $ span $ toHtml "foo"
---
--- Result:
---
--- > <select><span>foo</span></select>
---
-select :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-select = Parent "select" "<select" "</select>"
+{- | Combinator for the @\<select>@ element.
+
+ Example:
+
+ > select $ span $ fmt "foo"
+
+ Result:
+
+ > <select><span>foo</span></select>
+-}
+select ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+select = element "select"
 {-# INLINE select #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<small>@ element.
---
--- Example:
---
--- > small $ span $ toHtml "foo"
---
--- Result:
---
--- > <small><span>foo</span></small>
---
-small :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-small = Parent "small" "<small" "</small>"
+{- | Combinator for the @\<small>@ element.
+
+ Example:
+
+ > small $ span $ fmt "foo"
+
+ Result:
+
+ > <small><span>foo</span></small>
+-}
+small ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+small = element "small"
 {-# INLINE small #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<source />@ element.
---
--- Example:
---
--- > source
---
--- Result:
---
--- > <source />
---
-source :: Html  -- ^ Resulting HTML.
-source = Leaf "source" "<source" ">" ()
+{- | Combinator for the @\<source />@ element.
+
+ Example:
+
+ > source
+
+ Result:
+
+ > <source />
+-}
+source ::
+    -- | Resulting HTML.
+    Html a
+source = element_ "source"
 {-# INLINE source #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<span>@ element.
---
--- Example:
---
--- > span $ span $ toHtml "foo"
---
--- Result:
---
--- > <span><span>foo</span></span>
---
-span :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-span = Parent "span" "<span" "</span>"
+{- | Combinator for the @\<span>@ element.
+
+ Example:
+
+ > span $ span $ fmt "foo"
+
+ Result:
+
+ > <span><span>foo</span></span>
+-}
+span ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+span = element "span"
 {-# INLINE span #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<strong>@ element.
---
--- Example:
---
--- > strong $ span $ toHtml "foo"
---
--- Result:
---
--- > <strong><span>foo</span></strong>
---
-strong :: Html  -- ^ Inner HTML.
-       -> Html  -- ^ Resulting HTML.
-strong = Parent "strong" "<strong" "</strong>"
+{- | Combinator for the @\<strong>@ element.
+
+ Example:
+
+ > strong $ span $ fmt "foo"
+
+ Result:
+
+ > <strong><span>foo</span></strong>
+-}
+strong ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+strong = element "strong"
 {-# INLINE strong #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<style>@ element.
---
--- Example:
---
--- > style $ span $ toHtml "foo"
---
--- Result:
---
--- > <style><span>foo</span></style>
---
-style :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-style = Parent "style" "<style" "</style>" . external
+{- | Combinator for the @\<style>@ element.
+
+ Example:
+
+ > style $ span $ fmt "foo"
+
+ Result:
+
+ > <style><span>foo</span></style>
+-}
+style ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+style = element "style"
 {-# INLINE style #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<sub>@ element.
---
--- Example:
---
--- > sub $ span $ toHtml "foo"
---
--- Result:
---
--- > <sub><span>foo</span></sub>
---
-sub :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-sub = Parent "sub" "<sub" "</sub>"
+{- | Combinator for the @\<sub>@ element.
+
+ Example:
+
+ > sub $ span $ fmt "foo"
+
+ Result:
+
+ > <sub><span>foo</span></sub>
+-}
+sub ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+sub = element "sub"
 {-# INLINE sub #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<summary>@ element.
---
--- Example:
---
--- > summary $ span $ toHtml "foo"
---
--- Result:
---
--- > <summary><span>foo</span></summary>
---
-summary :: Html  -- ^ Inner HTML.
-        -> Html  -- ^ Resulting HTML.
-summary = Parent "summary" "<summary" "</summary>"
+{- | Combinator for the @\<summary>@ element.
+
+ Example:
+
+ > summary $ span $ fmt "foo"
+
+ Result:
+
+ > <summary><span>foo</span></summary>
+-}
+summary ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+summary = element "summary"
 {-# INLINE summary #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<sup>@ element.
---
--- Example:
---
--- > sup $ span $ toHtml "foo"
---
--- Result:
---
--- > <sup><span>foo</span></sup>
---
-sup :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-sup = Parent "sup" "<sup" "</sup>"
+{- | Combinator for the @\<sup>@ element.
+
+ Example:
+
+ > sup $ span $ fmt "foo"
+
+ Result:
+
+ > <sup><span>foo</span></sup>
+-}
+sup ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+sup = element "sup"
 {-# INLINE sup #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<table>@ element.
---
--- Example:
---
--- > table $ span $ toHtml "foo"
---
--- Result:
---
--- > <table><span>foo</span></table>
---
-table :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-table = Parent "table" "<table" "</table>"
+{- | Combinator for the @\<table>@ element.
+
+ Example:
+
+ > table $ span $ fmt "foo"
+
+ Result:
+
+ > <table><span>foo</span></table>
+-}
+table ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+table = element "table"
 {-# INLINE table #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<tbody>@ element.
---
--- Example:
---
--- > tbody $ span $ toHtml "foo"
---
--- Result:
---
--- > <tbody><span>foo</span></tbody>
---
-tbody :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-tbody = Parent "tbody" "<tbody" "</tbody>"
+{- | Combinator for the @\<tbody>@ element.
+
+ Example:
+
+ > tbody $ span $ fmt "foo"
+
+ Result:
+
+ > <tbody><span>foo</span></tbody>
+-}
+tbody ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+tbody = element "tbody"
 {-# INLINE tbody #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<td>@ element.
---
--- Example:
---
--- > td $ span $ toHtml "foo"
---
--- Result:
---
--- > <td><span>foo</span></td>
---
-td :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-td = Parent "td" "<td" "</td>"
+{- | Combinator for the @\<td>@ element.
+
+ Example:
+
+ > td $ span $ fmt "foo"
+
+ Result:
+
+ > <td><span>foo</span></td>
+-}
+td ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+td = element "td"
 {-# INLINE td #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<textarea>@ element.
---
--- Example:
---
--- > textarea $ span $ toHtml "foo"
---
--- Result:
---
--- > <textarea><span>foo</span></textarea>
---
-textarea :: Html  -- ^ Inner HTML.
-         -> Html  -- ^ Resulting HTML.
-textarea = Parent "textarea" "<textarea" "</textarea>"
+{- | Combinator for the @\<textarea>@ element.
+
+ Example:
+
+ > textarea $ span $ fmt "foo"
+
+ Result:
+
+ > <textarea><span>foo</span></textarea>
+-}
+textarea ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+textarea = element "textarea"
 {-# INLINE textarea #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<tfoot>@ element.
---
--- Example:
---
--- > tfoot $ span $ toHtml "foo"
---
--- Result:
---
--- > <tfoot><span>foo</span></tfoot>
---
-tfoot :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-tfoot = Parent "tfoot" "<tfoot" "</tfoot>"
+{- | Combinator for the @\<tfoot>@ element.
+
+ Example:
+
+ > tfoot $ span $ fmt "foo"
+
+ Result:
+
+ > <tfoot><span>foo</span></tfoot>
+-}
+tfoot ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+tfoot = element "tfoot"
 {-# INLINE tfoot #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<th>@ element.
---
--- Example:
---
--- > th $ span $ toHtml "foo"
---
--- Result:
---
--- > <th><span>foo</span></th>
---
-th :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-th = Parent "th" "<th" "</th>"
+{- | Combinator for the @\<th>@ element.
+
+ Example:
+
+ > th $ span $ fmt "foo"
+
+ Result:
+
+ > <th><span>foo</span></th>
+-}
+th ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+th = element "th"
 {-# INLINE th #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<thead>@ element.
---
--- Example:
---
--- > thead $ span $ toHtml "foo"
---
--- Result:
---
--- > <thead><span>foo</span></thead>
---
-thead :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-thead = Parent "thead" "<thead" "</thead>"
+{- | Combinator for the @\<thead>@ element.
+
+ Example:
+
+ > thead $ span $ fmt "foo"
+
+ Result:
+
+ > <thead><span>foo</span></thead>
+-}
+thead ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+thead = element "thead"
 {-# INLINE thead #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<time>@ element.
---
--- Example:
---
--- > time $ span $ toHtml "foo"
---
--- Result:
---
--- > <time><span>foo</span></time>
---
-time :: Html  -- ^ Inner HTML.
-     -> Html  -- ^ Resulting HTML.
-time = Parent "time" "<time" "</time>"
+{- | Combinator for the @\<time>@ element.
+
+ Example:
+
+ > time $ span $ fmt "foo"
+
+ Result:
+
+ > <time><span>foo</span></time>
+-}
+time ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+time = element "time"
 {-# INLINE time #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<title>@ element.
---
--- Example:
---
--- > title $ span $ toHtml "foo"
---
--- Result:
---
--- > <title><span>foo</span></title>
---
-title :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-title = Parent "title" "<title" "</title>"
+{- | Combinator for the @\<title>@ element.
+
+ Example:
+
+ > title $ span $ fmt "foo"
+
+ Result:
+
+ > <title><span>foo</span></title>
+-}
+title ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+title = element "title"
 {-# INLINE title #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<tr>@ element.
---
--- Example:
---
--- > tr $ span $ toHtml "foo"
---
--- Result:
---
--- > <tr><span>foo</span></tr>
---
-tr :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-tr = Parent "tr" "<tr" "</tr>"
+{- | Combinator for the @\<tr>@ element.
+
+ Example:
+
+ > tr $ span $ fmt "foo"
+
+ Result:
+
+ > <tr><span>foo</span></tr>
+-}
+tr ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+tr = element "tr"
 {-# INLINE tr #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<track />@ element.
---
--- Example:
---
--- > track
---
--- Result:
---
--- > <track />
---
-track :: Html  -- ^ Resulting HTML.
-track = Leaf "track" "<track" ">" ()
+{- | Combinator for the @\<track />@ element.
+
+ Example:
+
+ > track
+
+ Result:
+
+ > <track />
+-}
+track ::
+    -- | Resulting HTML.
+    Html a
+track = element_ "track"
 {-# INLINE track #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<u>@ element.
---
--- Example:
---
--- > u $ span $ toHtml "foo"
---
--- Result:
---
--- > <u><span>foo</span></u>
---
-u :: Html  -- ^ Inner HTML.
-  -> Html  -- ^ Resulting HTML.
-u = Parent "u" "<u" "</u>"
+{- | Combinator for the @\<u>@ element.
+
+ Example:
+
+ > u $ span $ fmt "foo"
+
+ Result:
+
+ > <u><span>foo</span></u>
+-}
+u ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+u = element "u"
 {-# INLINE u #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<ul>@ element.
---
--- Example:
---
--- > ul $ span $ toHtml "foo"
---
--- Result:
---
--- > <ul><span>foo</span></ul>
---
-ul :: Html  -- ^ Inner HTML.
-   -> Html  -- ^ Resulting HTML.
-ul = Parent "ul" "<ul" "</ul>"
+{- | Combinator for the @\<ul>@ element.
+
+ Example:
+
+ > ul $ span $ fmt "foo"
+
+ Result:
+
+ > <ul><span>foo</span></ul>
+-}
+ul ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+ul = element "ul"
 {-# INLINE ul #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<var>@ element.
---
--- Example:
---
--- > var $ span $ toHtml "foo"
---
--- Result:
---
--- > <var><span>foo</span></var>
---
-var :: Html  -- ^ Inner HTML.
-    -> Html  -- ^ Resulting HTML.
-var = Parent "var" "<var" "</var>"
+{- | Combinator for the @\<var>@ element.
+
+ Example:
+
+ > var $ span $ fmt "foo"
+
+ Result:
+
+ > <var><span>foo</span></var>
+-}
+var ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+var = element "var"
 {-# INLINE var #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:199
---
--- | Combinator for the @\<video>@ element.
---
--- Example:
---
--- > video $ span $ toHtml "foo"
---
--- Result:
---
--- > <video><span>foo</span></video>
---
-video :: Html  -- ^ Inner HTML.
-      -> Html  -- ^ Resulting HTML.
-video = Parent "video" "<video" "</video>"
+{- | Combinator for the @\<video>@ element.
+
+ Example:
+
+ > video $ span $ fmt "foo"
+
+ Result:
+
+ > <video><span>foo</span></video>
+-}
+video ::
+    -- | Inner HTML.
+    Html a ->
+    -- | Resulting HTML.
+    Html a
+video = element "video"
 {-# INLINE video #-}
 
--- WARNING: The next block of code was automatically generated by
--- src/Util/GenerateHtmlCombinators.hs:226
---
--- | Combinator for the @\<wbr />@ element.
---
--- Example:
---
--- > wbr
---
--- Result:
---
--- > <wbr />
---
-wbr :: Tag a
-wbr = tag_ "wbr"
-{-# INLINE wbr #-}
+{- | Combinator for the @\<wbr />@ element.
 
+ Example:
 
+ > wbr
 
+ Result:
 
-
-
-
-
-
+ > <wbr />
 -}
+wbr :: Html a
+wbr = element_ "wbr"
+{-# INLINE wbr #-}
