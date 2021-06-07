@@ -1,5 +1,4 @@
 module Data.Fmt.Code (
-
     v,
 
     -- * Character encodings
@@ -9,7 +8,7 @@ module Data.Fmt.Code (
     s,
     s7,
     s8,
-    
+
     -- * Ascii float encodings
     e,
     f,
@@ -50,21 +49,22 @@ module Data.Fmt.Code (
 ) where
 
 import Data.ByteString (ByteString)
-import Data.Int
+import qualified Data.ByteString.Builder as BL
+import qualified Data.ByteString.Lazy.Char8 as BL
 import Data.Fmt
+import Data.Int
 import Data.Word
 import qualified Numeric as N
-import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.ByteString.Builder as BL
 
--- | Encode a loggable value.
---
--- Semantics are similar to 'ByteString.Printf.printf':
---
--- >>> Text.Printf.printf "%v" 42 :: String
--- "42"
--- >>> runLogFmt v 42
--- "42"
+{- | Encode a loggable value.
+
+ Semantics are similar to 'ByteString.Printf.printf':
+
+ >>> Text.Printf.printf "%v" 42 :: String
+ "42"
+ >>> runLogFmt v 42
+ "42"
+-}
 {-# INLINE v #-}
 v :: ToLogStr a => Fmt1 LogStr s a
 v = fmt1 toLogStr
@@ -107,36 +107,39 @@ s8 = fmt1 $ toLogStr . BL.string8
 
 -------------------------
 
--- | Format a floating point number to a given number of digits of precision.
---
--- Semantics are similar to 'ByteString.Printf.printf':
---
--- >>> ByteString.Printf.printf "%.5e" pi :: String
--- "3.14159e0"
--- >>> runLogFmt (e 5) pi
--- "3.14159e0"
+{- | Format a floating point number to a given number of digits of precision.
+
+ Semantics are similar to 'ByteString.Printf.printf':
+
+ >>> ByteString.Printf.printf "%.5e" pi :: String
+ "3.14159e0"
+ >>> runLogFmt (e 5) pi
+ "3.14159e0"
+-}
 e :: (IsString m, RealFloat a) => Int -> Fmt1 m s a
 e prec = fmt1 $ fromString . flip (N.showEFloat $ Just prec) []
 
--- | Format a floating point number to a given number of digits of precision.
---
--- Semantics are similar to 'ByteString.Printf.printf':
---
--- >>> ByteString.Printf.printf "%.5f" maximal32 :: String
--- "340282330000000000000000000000000000000.00000"
--- >>> runLogFmt (f 5) maximal32
--- "340282330000000000000000000000000000000.00000"
+{- | Format a floating point number to a given number of digits of precision.
+
+ Semantics are similar to 'ByteString.Printf.printf':
+
+ >>> ByteString.Printf.printf "%.5f" maximal32 :: String
+ "340282330000000000000000000000000000000.00000"
+ >>> runLogFmt (f 5) maximal32
+ "340282330000000000000000000000000000000.00000"
+-}
 f :: (IsString m, RealFloat a) => Int -> Fmt1 m s a
 f prec = fmt1 $ fromString . flip (N.showFFloat $ Just prec) []
 
--- | Format a floating point number to a given number of digits of precision.
---
--- Semantics are similar to 'ByteString.Printf.printf':
---
--- >>> ByteString.Printf.printf "%.5g" maximal32 :: String
--- "3.40282e38"
--- >>> runLogFmt (g 5) maximal32
--- "3.40282e38"
+{- | Format a floating point number to a given number of digits of precision.
+
+ Semantics are similar to 'ByteString.Printf.printf':
+
+ >>> ByteString.Printf.printf "%.5g" maximal32 :: String
+ "3.40282e38"
+ >>> runLogFmt (g 5) maximal32
+ "3.40282e38"
+-}
 g :: (IsString m, RealFloat a) => Int -> Fmt1 m s a
 g prec = fmt1 $ fromString . flip (N.showGFloat $ Just prec) []
 
@@ -149,13 +152,13 @@ g prec = fmt1 $ fromString . flip (N.showGFloat $ Just prec) []
 d :: Fmt1 LogStr s Int
 d = fmt1 $ toLogStr . BL.intDec
 
--- | Decimal encoding of an 'Int8' using the ASCII digits.
---
--- e.g.
---
--- > toLazyByteString (int8Dec 42)   = "42"
--- > toLazyByteString (int8Dec (-1)) = "-1"
---
+{- | Decimal encoding of an 'Int8' using the ASCII digits.
+
+ e.g.
+
+ > toLazyByteString (int8Dec 42)   = "42"
+ > toLazyByteString (int8Dec (-1)) = "-1"
+-}
 {-# INLINE hhd #-}
 hhd :: Fmt1 LogStr s Int8
 hhd = fmt1 $ toLogStr . BL.int8Dec
@@ -238,14 +241,15 @@ lx = fmt1 $ toLogStr . BL.word32Hex
 lx' :: Fmt1 LogStr s Word32
 lx' = fmt1 $ toLogStr . BL.word32HexFixed
 
--- | Shortest hexadecimal encoding of a 'Word64' using lower-case characters.
---
--- Semantics are similar to 'Text.Printf.printf':
---
--- >>> P.printf "%s: %llx" "Val" (-7) :: String
--- "Val: fffffffffffffff9"
--- >>> printf (s % ": " % llx) "Val" (-7)
--- "Val: fffffffffffffff9"
+{- | Shortest hexadecimal encoding of a 'Word64' using lower-case characters.
+
+ Semantics are similar to 'Text.Printf.printf':
+
+ >>> P.printf "%s: %llx" "Val" (-7) :: String
+ "Val: fffffffffffffff9"
+ >>> printf (s % ": " % llx) "Val" (-7)
+ "Val: fffffffffffffff9"
+-}
 {-# INLINE llx #-}
 llx :: Fmt1 LogStr s Word64
 llx = fmt1 $ toLogStr . BL.word64Hex
@@ -263,9 +267,10 @@ b :: Fmt1 LogStr s BL.ByteString
 b = fmt1 toLogStr
 {-# INLINE b #-}
 
--- | Format a strict byte string.
---
--- @ 'fmap' (. 'Data.ByteString.pack') 't'' :: 'Fmt1' 'Data.ByteString.Builder.Builder' s 'String' @
+{- | Format a strict byte string.
+
+ @ 'fmap' (. 'Data.ByteString.pack') 't'' :: 'Fmt1' 'Data.ByteString.Builder.Builder' s 'String' @
+-}
 b' :: Fmt1 LogStr s ByteString
 b' = fmt1 toLogStr
 {-# INLINE b' #-}
@@ -295,20 +300,20 @@ lb = fmt1 $ toLogStr . BL.word32LE
 lb' :: Fmt1 LogStr s Word32
 lb' = fmt1 $ toLogStr . BL.word32BE
 
--- | Encode a 'Word64' using little-endian format.
---
--- Semantics are similar to 'Tebt.Printf.printf':
---
--- >>> P.printf "%s: %llb" "Val" (-7) :: String
--- "Val: fffffffffffffff9"
--- >>> printf (s % ": " % llb) "Val" (-7)
--- "Val: fffffffffffffff9"
+{- | Encode a 'Word64' using little-endian format.
+
+ Semantics are similar to 'Tebt.Printf.printf':
+
+ >>> P.printf "%s: %llb" "Val" (-7) :: String
+ "Val: fffffffffffffff9"
+ >>> printf (s % ": " % llb) "Val" (-7)
+ "Val: fffffffffffffff9"
+-}
 {-# INLINE llb #-}
 llb :: Fmt1 LogStr s Word64
 llb = fmt1 $ toLogStr . BL.word64LE
 
 -- | Encode a 'Word64' using big-endian format.
---
 {-# INLINE llb' #-}
 llb' :: Fmt1 LogStr s Word64
 llb' = fmt1 $ toLogStr . BL.word64BE

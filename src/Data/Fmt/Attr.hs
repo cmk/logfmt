@@ -185,9 +185,9 @@ module Data.Fmt.Attr (
     xmlns,
 ) where
 
-import Data.Fmt
-import Prelude (Maybe(..), Eq(..), (||), ($), Monoid(..))
 import qualified Data.ByteString.Char8 as B
+import Data.Fmt
+import Prelude (Eq (..), Maybe (..), Monoid (..), ($), (||))
 
 attr :: ToLogStr s => LogStr -> s -> Attr
 attr k v = Attr $ splitWith f g
