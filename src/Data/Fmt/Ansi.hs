@@ -25,7 +25,7 @@ module Data.Fmt.Ansi (
     ConsoleLayer (..),
 ) where
 
-import Data.Fmt.Type
+import Data.Fmt
 import Data.Word
 import System.Console.ANSI.Codes
 import System.Console.ANSI.Types

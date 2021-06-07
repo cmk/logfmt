@@ -1,18 +1,11 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Data.Fmt.Time (
     time,
-    date,
-    euro,
-    -- Time
     
-    -- Intra-day
+    -- * Time
+    t,
     hm,
     hms,
-    second,
-    minute,
-    hour,
-    
-    -- Inter-day
     day,
     day',
     month,
@@ -20,7 +13,8 @@ module Data.Fmt.Time (
     year,
     unix,
     zone,
-    -- Duration
+    
+    -- * Duration
     secs,
     mins,
     hours,
@@ -28,75 +22,33 @@ module Data.Fmt.Time (
     years,
 ) where
 
-import Control.Arrow (arr)
-import Data.Fmt.Type as Fmt --((%), fmt, fmt1, Fmt, Fmt1, runFmt)
---import qualified Data.Fmt.Type as Fmt
+import Data.Fmt as Fmt hiding (s)
 import Data.String
 import Data.Time (FormatTime, formatTime, defaultTimeLocale)
-import Data.Time.Format.ISO8601
-import Prelude
-
---iso8601 :: (IsString m, Monoid m, ISO8601 a) => Fmt m a m
-iso8601 :: ISO8601 a => Fmt LogStr a LogStr
-iso8601 = arr $ fromString . iso8601Show
+import Data.Time.Format.ISO8601 (ISO8601, iso8601Show)
+import Prelude hiding (min)
 
 -- | A custom time formatter.
---
--- See "Data.Time.Format".
+-- 
+-- For example, the E.U. formatting convention is  /time "%Y-%m-%d %T %z"/
 time :: (IsString m, FormatTime a) => String -> Fmt1 m s a
 time s = fmt1 $ fromString . formatTime defaultTimeLocale s
-
--- | Local time: /05 Jun 2021 01:46:46 -0700/
-date :: (IsString m, FormatTime a) => Fmt1 m s a
-date = time "%d %b %Y %T %z"
-
--- | Local time (Euro convention): /2021-06-05 01:46:46 -0700/
-euro :: (IsString m, FormatTime a) => Fmt1 m s a
-euro = time "%Y-%m-%d %T %z"
-
--- now <- getZonedTime
--- printf (time "%a %b %e %H:%M:%S %EZ %Y") now
---
 
 -- Time
 
 -------------------------
 
--- | Time: @%m/%d/%y@.
---d :: (IsString m, FormatTime a) => Fmt1 m s a
---d = time "%D"
+-- | < https://en.wikipedia.org/wiki/ISO_8601 ISO-8601> time: /2021-06-05T01:46:46.173677-07:00/
+t :: (IsString m, ISO8601 a) => Fmt1 m s a
+t = fmt1 $ fromString . iso8601Show
 
--- | Time: @%Y/%m/%d@.
---f :: (IsString m, FormatTime a) => Fmt1 m s a
---f = time "%F"
-
-
-
-
--- | Time: @%H:%M@.
+-- | Hour-minute of day: @%H:%M@.
 hm :: (IsString m, FormatTime a) => Fmt1 m s a
 hm = time "%R"
 
--- | Time: @%H:%M:%S@.
+-- | Hour-minute-second of day: @%H:%M:%S@.
 hms :: (IsString m, FormatTime a) => Fmt1 m s a
 hms = time "%T"
-
-
--- Time units
-
--------------------------
-
--- | Second of minute: @00@ - @60@.
-second :: (IsString m, FormatTime a) => Fmt1 m s a
-second = time "%S"
-
--- | Minute of hour: @00@ - @59@.
-minute :: (IsString m, FormatTime a) => Fmt1 m s a
-minute = time "%M"
-
--- | Hour of day: @00@ - @23@.
-hour :: (IsString m, FormatTime a) => Fmt1 m s a
-hour = time "%H"
 
 -- | Day of month: @01@ - @31@.
 day :: (IsString m, FormatTime a) => Fmt1 m s a
