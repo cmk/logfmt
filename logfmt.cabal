@@ -27,6 +27,7 @@ library
       Data.Fmt
       Data.Fmt.Ansi
       Data.Fmt.Attr
+      Data.Fmt.Code
       Data.Fmt.Html
       Data.Fmt.Time
       --System.Log.Format
