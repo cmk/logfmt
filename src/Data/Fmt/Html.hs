@@ -14,7 +14,6 @@ module Data.Fmt.Html (
     Element (..),
     (!?),
    
-    numbers,
     -- * Elements
     docType,
     docTypeHtml,
@@ -126,40 +125,12 @@ module Data.Fmt.Html (
     var,
     video,
     wbr,
-    contact
 ) where
 
 import Data.Fmt
 import Prelude hiding (div, head, map, span)
 
 import Data.Fmt.Attr (href)
-
-
-contact :: Html LogStr
-contact = p "You can reach me at" % ul . spr . li $ do
-    c1 <- a ! href @String "https://example.com" $ "Website"
-    c2 <- a ! href @String "mailto:cmk@example.com" $ "Email"
-    pure $ c1 <> c2
-
--- "<p>You can reach me at</p><ul><li><a href=\"https://example.com\">Website</a></li><li><a href=\"mailto:cmk@example.com\">Email</a></li></ul>"
-
--- | Run a monadic expression.
---
--- This executes the formatting commands contained in the expression and 
--- returns the result as a variable.
-run :: Fmt m m n -> Fmt n a a
-run = fmt . runFmt
-
--- > runLogFmt $ numbers 2
--- "<html><p>A list of numbers:</p><html><ul><li>1</li><li>2</li></ul></html><p>The end.</p></html>"
-numbers :: Int -> Html LogStr
-numbers n = html $ do
-    l <- ul . cat $ li . toHtml <$> [1 .. n]
-    cat
-        [ p "A list of numbers:"
-        , fmt l
-        , p "The end."
-        ]
 
 -- | Create a < https://en.wikipedia.org/wiki/HTML_element#Syntax tag > for an element.
 element :: String -> Html a -> Html a

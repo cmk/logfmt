@@ -23,6 +23,7 @@ module Data.Fmt.Ansi (
     XColor,
     Color (..),
     ConsoleLayer (..),
+    SGR(..)
 ) where
 
 import Data.Fmt
