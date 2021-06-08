@@ -56,6 +56,11 @@ import Data.Int
 import Data.Word
 import qualified Numeric as N
 
+{- $setup
+ >>> import Text.Printf
+ >>> :load Data.Fmt
+-}
+
 {- | Encode a loggable value.
 
  Semantics are similar to 'ByteString.Printf.printf':
@@ -111,7 +116,7 @@ s8 = fmt1 $ toLogStr . BL.string8
 
  Semantics are similar to 'ByteString.Printf.printf':
 
- >>> ByteString.Printf.printf "%.5e" pi :: String
+ >>> Text.Printf.printf "%.5e" pi :: String
  "3.14159e0"
  >>> runLogFmt (e 5) pi
  "3.14159e0"
@@ -123,7 +128,7 @@ e prec = fmt1 $ fromString . flip (N.showEFloat $ Just prec) []
 
  Semantics are similar to 'ByteString.Printf.printf':
 
- >>> ByteString.Printf.printf "%.5f" maximal32 :: String
+ >>> Text.Printf.printf "%.5f" maximal32 :: String
  "340282330000000000000000000000000000000.00000"
  >>> runLogFmt (f 5) maximal32
  "340282330000000000000000000000000000000.00000"
@@ -135,7 +140,7 @@ f prec = fmt1 $ fromString . flip (N.showFFloat $ Just prec) []
 
  Semantics are similar to 'ByteString.Printf.printf':
 
- >>> ByteString.Printf.printf "%.5g" maximal32 :: String
+ >>> Text.Printf.printf "%.5g" maximal32 :: String
  "3.40282e38"
  >>> runLogFmt (g 5) maximal32
  "3.40282e38"
@@ -245,7 +250,7 @@ lx' = fmt1 $ toLogStr . BL.word32HexFixed
 
  Semantics are similar to 'Text.Printf.printf':
 
- >>> P.printf "%s: %llx" "Val" (-7) :: String
+ >>> Text.printf "%s: %llx" "Val" (-7) :: String
  "Val: fffffffffffffff9"
  >>> printf (s % ": " % llx) "Val" (-7)
  "Val: fffffffffffffff9"
@@ -304,7 +309,7 @@ lb' = fmt1 $ toLogStr . BL.word32BE
 
  Semantics are similar to 'Tebt.Printf.printf':
 
- >>> P.printf "%s: %llb" "Val" (-7) :: String
+ >>> Text.printf "%s: %llb" "Val" (-7) :: String
  "Val: fffffffffffffff9"
  >>> printf (s % ": " % llb) "Val" (-7)
  "Val: fffffffffffffff9"
