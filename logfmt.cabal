@@ -1,7 +1,7 @@
 cabal-version:       >=1.10
 
 name:           logfmt
-version:        0.0.0
+version:        0.0.1
 synopsis:       Formatting
 description:    Please see the README on GitHub at https://github.com/cmk/logfmt#readme
 category:       Text, System
@@ -30,9 +30,6 @@ library
       Data.Fmt.Code
       Data.Fmt.Html
       Data.Fmt.Time
-      --System.Log.Format
-      --System.Log.Logger
-      --System.Log.Parser
 
   other-modules:
       Paths_logfmt

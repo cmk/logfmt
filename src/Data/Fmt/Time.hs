@@ -32,7 +32,7 @@ import qualified Data.Fmt.Code as Fmt
 
 {- | A custom time formatter.
 
- For example, the E.U. formatting convention is  /time "%Y-%m-%d %T %z"/
+ For example, the E.U. formatting convention is @ 'time' "%Y-%m-%d %T %z" @
 -}
 time :: (IsString m, FormatTime a) => String -> Fmt1 m s a
 time s = fmt1 $ fromString . formatTime defaultTimeLocale s
