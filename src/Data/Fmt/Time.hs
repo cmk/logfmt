@@ -24,11 +24,11 @@ module Data.Fmt.Time (
 ) where
 
 import Data.Fmt
-import qualified Data.Fmt.Code as Fmt
 import Data.String
 import Data.Time (FormatTime, defaultTimeLocale, formatTime)
 import Data.Time.Format.ISO8601 (ISO8601, iso8601Show)
 import Prelude hiding (min)
+import qualified Data.Fmt.Code as Fmt
 
 {- | A custom time formatter.
 

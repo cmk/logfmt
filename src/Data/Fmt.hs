@@ -11,10 +11,11 @@ module Data.Fmt (
     -- * Type
     LogFmt,
     Fmt (..),
+    spr,
+    printf,
     runFmt,
     runLogFmt,
-    printf,
-
+    
     -- * Fmt
     fmt,
     logFmt,
@@ -83,26 +84,19 @@ module Data.Fmt (
 import Control.Applicative (Const (..), getConst)
 import Control.Arrow
 import Control.Category (Category (), (<<<), (>>>))
-import qualified Control.Category as C
-import Data.Bifunctor (bimap)
--- (showEFloat,showFFloat,showIntAtBase)
-import qualified Data.ByteString.Builder as BL
-import Data.Foldable (toList)
-import Data.Function ((&))
-import Data.Int
-import Data.Profunctor
-import Data.String
-import Data.Word
-import GHC.Exts (IsList, Item)
-import qualified GHC.Exts as IsList (toList)
-import qualified Numeric as N
-import System.Log.FastLogger (LogStr, ToLogStr (..), fromLogStr)
-
 import Data.ByteString (ByteString)
 import Data.ByteString.Builder (Builder)
+import Data.Foldable (toList)
+import Data.Profunctor
+import Data.String
+import GHC.Exts (IsList, Item)
+import System.Log.FastLogger (LogStr, ToLogStr (..), fromLogStr)
+import qualified Control.Category as C
 import qualified Data.ByteString.Builder as BL
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified GHC.Exts as IsList (toList)
+import qualified Numeric as N
 
 {- $setup
  >>> import Data.Printf
@@ -154,7 +148,7 @@ instance (IsString m, a ~ b) => IsString (Fmt m a b) where
 instance Semigroup m => Semigroup (Fmt1 m s a) where
     (<>) = (.%)
 
-instance Monoid m => Monoid (Fmt1 m a b) where
+instance Monoid m => Monoid (Fmt1 m s a) where
     mempty = Fmt (\k _ -> k mempty)
 
 instance Monoid m => Category (Fmt m) where
@@ -168,6 +162,32 @@ instance Monoid m => Arrow (Fmt m) where
 instance Monoid m => Strong (Fmt m) where
     first' x = x *** C.id
     second' x = C.id *** x
+
+{- | Run a monadic formatting expression.
+
+   Like the method of 'Text.Printf.PrintfType', 'spr' executes the formatting
+   commands contained in the expression and returns the result as a monadic
+   variable.
+
+   For example, note that the 'Data.Fmt.Html.li' tag repeats, while the
+   'Data.Fmt.Html.ul' tag does not: 
+
+   >>> :{
+    let contact = p "You can reach me at" % ul . spr . li $ do
+          c1 <- a ! href @String "https://example.com" $ "Website"
+          c2 <- a ! href @String "mailto:cmk@example.com" $ "Email"
+          pure $ c1 <> c2
+    in runLogStr contact
+   :}
+   "<p>You can reach me at</p><ul><li><a href=\"https://foo.com\">Web</a></li><li><a href=\"mailto:cmk@foo.com\">Email</a></li></ul>"
+-}
+spr :: IsString s => Fmt LogStr s m -> Fmt m a a
+spr = fmt . runLogFmt
+
+-- | Run a formatter and print out the text to stdout.
+{-# INLINE printf #-}
+printf :: Fmt LogStr Term a -> a
+printf = flip unFmt (B.putStrLn . fromLogStr)
 
 -- | Run a 'Fmt'.
 {-# INLINE runFmt #-}
@@ -184,11 +204,6 @@ runLogFmt = flip unFmt (fromString . B.unpack . fromLogStr)
 {-# SPECIALIZE runLogFmt :: Fmt LogStr LogStr a -> a #-}
 {-# SPECIALIZE runLogFmt :: Fmt LogStr Builder a -> a #-}
 
--- | Run a formatter and print out the text to stdout.
-{-# INLINE printf #-}
-printf :: Fmt LogStr Term a -> a
-printf = flip unFmt (B.putStrLn . fromLogStr)
-
 -- | Format a constant value of type @m@.
 {-# INLINE fmt #-}
 fmt :: m -> Fmt m a a
@@ -200,7 +215,7 @@ logFmt :: ToLogStr m => m -> Fmt LogStr a a
 logFmt = fmt . toLogStr
 
 -- | Concatenate two formatters.
-infixr 6 %
+infixr 0 %
 
 {-# INLINE (%) #-}
 (%) :: Semigroup m => Fmt m b c -> Fmt m a b -> Fmt m a c
@@ -372,19 +387,22 @@ split1With lf split (Fmt g) = Fmt (g . (. runFmt (lf $ fmt1 id) . fmap toLogStr 
 
 -------------------------
 
-{-
--- > runLogFmt $ numbers 2
--- "<html><p>A list of numbers:</p><html><ul><li>1</li><li>2</li></ul></html><p>The end.</p></html>"
-numbers :: Int -> Html LogStr
-numbers n = H.html $ do
-    l <- H.ul . cat $ H.li . toHtml <$> [1 .. n]
-    cat
-        [ H.p "A list of numbers:"
-        , fmt l
-        , H.p "The end."
-        ]
--}
+{- | Format HTML
 
+  For example:
+
+  @
+  contact :: 'Html' 'LogStr'
+  contact = 'Data.Fmt.Html.p' "You can reach me at" '%' 'Data.Fmt.Html.ul' . 'spr' . 'Data.Fmt.Html.li' $ do
+        c1 <- 'Data.Fmt.Html.a' '!' 'href' @String "https://example.com" $ "Website"
+        c2 <- 'Data.Fmt.Html.a' '!' 'href' @String "mailto:cmk@example.com" $ "Email"
+        'pure' $ c1 '<>' c2
+  @
+  
+  generates the following output:
+
+  > "<p>You can reach me at</p><ul><li><a href=\"https://foo.com\">Web</a></li><li><a href=\"mailto:cmk@foo.com\">Email</a></li></ul>"
+-}
 type Html a = Fmt LogStr a a
 
 toHtml :: ToLogStr s => s -> Html a
@@ -402,7 +420,7 @@ instance Semigroup Attr where
 instance Monoid Attr where
     mempty = Attr id
 
-{- | Used for applying attributes.
+{- | Apply an attribute to an HTML tag.
 
  The interface is similar to < https://hackage.haskell.org/package/blaze-builder >.
 
