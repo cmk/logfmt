@@ -132,6 +132,7 @@ import Prelude hiding (div, head, map, span)
 
 import Data.Fmt.Attr (href)
 
+
 -- | Create a < https://en.wikipedia.org/wiki/HTML_element#Syntax tag > for an element.
 element :: String -> Html a -> Html a
 element = enclose <$> (enclose "<" ">" . toHtml) <*> (enclose "</" ">" . toHtml)

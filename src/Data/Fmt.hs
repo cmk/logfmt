@@ -13,6 +13,7 @@ module Data.Fmt (
     Fmt (..),
     spr,
     printf,
+    printfLn,
     runFmt,
     runLogFmt,
     
@@ -173,9 +174,9 @@ instance Monoid m => Strong (Fmt m) where
    'Data.Fmt.Html.ul' tag does not: 
 
    >>> :{
-    let contact = p "You can reach me at" % ul . spr . li $ do
-          c1 <- a ! href @String "https://example.com" $ "Website"
-          c2 <- a ! href @String "mailto:cmk@example.com" $ "Email"
+    let contact = Data.Fmt.Html.p "You can reach me at" % Data.Fmt.Html.ul . spr . Data.Fmt.Html.li $ do
+          c1 <- Data.Fmt.Html.a ! Data.Fmt.Attr.href @String "https://example.com" $ "Website"
+          c2 <- Data.Fmt.Html.a ! Data.Fmt.Attr.href @String "mailto:cmk@example.com" $ "Email"
           pure $ c1 <> c2
     in runLogStr contact
    :}
@@ -184,10 +185,15 @@ instance Monoid m => Strong (Fmt m) where
 spr :: IsString s => Fmt LogStr s m -> Fmt m a a
 spr = fmt . runLogFmt
 
--- | Run a formatter and print out the text to stdout.
+-- | Run a formatter and print the text to stdout.
 {-# INLINE printf #-}
 printf :: Fmt LogStr Term a -> a
-printf = flip unFmt (B.putStrLn . fromLogStr)
+printf = flip unFmt (B.putStr . fromLogStr)
+
+-- | Run a formatter and print the text to stdout, followed by a newline.
+{-# INLINE printfLn #-}
+printfLn :: Fmt LogStr Term a -> a
+printfLn = flip unFmt (B.putStrLn . fromLogStr)
 
 -- | Run a 'Fmt'.
 {-# INLINE runFmt #-}
@@ -394,8 +400,8 @@ split1With lf split (Fmt g) = Fmt (g . (. runFmt (lf $ fmt1 id) . fmap toLogStr 
   @
   contact :: 'Html' 'LogStr'
   contact = 'Data.Fmt.Html.p' "You can reach me at" '%' 'Data.Fmt.Html.ul' . 'spr' . 'Data.Fmt.Html.li' $ do
-        c1 <- 'Data.Fmt.Html.a' '!' 'href' @String "https://example.com" $ "Website"
-        c2 <- 'Data.Fmt.Html.a' '!' 'href' @String "mailto:cmk@example.com" $ "Email"
+        c1 <- 'Data.Fmt.Html.a' '!' 'Data.Fmt.Attr.href' @String "https://example.com" $ "Website"
+        c2 <- 'Data.Fmt.Html.a' '!' 'Data.Fmt.Attr.href' @String "mailto:cmk@example.com" $ "Email"
         'pure' $ c1 '<>' c2
   @
   
@@ -687,7 +693,7 @@ list1 = cat1With (B.intercalate ", ") . brackets
 
  Like 'yamlListF', it handles multiline elements well:
 
- >>> fmt $ jsonListF ["hello\nworld", "foo\nbar\nquix"]
+ >>> printf jsonList ["hello\nworld", "foo\nbar\nquix"]
  [
    hello
    world
@@ -721,14 +727,14 @@ jsonList = fmt1 f
 
 {- | A multiline formatter for lists.
 
-  >>> printf (yamlList d) [1,2,3]
+  >>> printf yamlList [1,2,3]
   - 1
   - 2
   - 3
 
   Multi-line elements are indented correctly:
 
-  >>> printf (yamlList s) ["hello\nworld", "foo\nbar\nquix"]
+  >>> printf yamlList ["hello\nworld", "foo\nbar\nquix"]
   - hello
     world
   - foo
